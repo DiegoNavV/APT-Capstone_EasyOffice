@@ -1,0 +1,207 @@
+El contenido generado por IA puede ser incorrecto
+
+andres aliro fernandez guerrero empezó la transcripción
+
+Orador 1
+0 minutos 3 segundos0:03
+@1 0 minutos 3 segundos
+Acudir a la transcripción y al vídeo en caso de.
+D
+
+Diego Eduardo Navarrete Valderrama
+0 minutos 3 segundos0:03
+Diego Eduardo Navarrete Valderrama 0 minutos 3 segundos
+Ready.
+Diego Eduardo Navarrete Valderrama 0 minutos 7 segundos
+pero dice, verdad.
+
+Orador 1
+0 minutos 12 segundos0:12
+@1 0 minutos 12 segundos
+Si rescatamos dato importante que a lo mejor no nos demos cuenta.
+@1 0 minutos 17 segundos
+¿Tenemos las preguntas para hacerle o no?
+@1 0 minutos 21 segundos
+Para levantar requerimiento y cosas así para poder hacer el.
+D
+
+Diego Eduardo Navarrete Valderrama
+0 minutos 24 segundos0:24
+Diego Eduardo Navarrete Valderrama 0 minutos 24 segundos
+Sí, yo me hice, yo ayer me hice un.
+Diego Eduardo Navarrete Valderrama 0 minutos 29 segundos
+De varias preguntas, de varios tipos de preguntas, tanto de como el de contexto de problema, objetivo, usuario, alcance.
+
+Orador 1
+0 minutos 33 segundos0:33
+@1 0 minutos 33 segundos
+Ya por.
+@1 0 minutos 37 segundos
+Sí, por eso para y para que nos permita, por ejemplo, rescatar los requerimientos funcionales y no funcionales también.
+DR
+Dunkan Hernandez Reyes
+1 hora 41 minutos 57 segundos1:41:57
+Dunkan Hernandez Reyes 1 hora 41 minutos 57 segundos
+claro, por eso está.
+D
+Diego Eduardo Navarrete Valderrama
+1 hora 41 minutos 58 segundos1:41:58
+Diego Eduardo Navarrete Valderrama 1 hora 41 minutos 58 segundos
+Sí, habría que terminó la reunión y ahí aparecería.
+DR
+Dunkan Hernandez Reyes
+1 hora 42 minutos 2 segundos1:42:02
+Dunkan Hernandez Reyes 1 hora 42 minutos 2 segundos
+Ya pueden ver la pantalla, no un poquito.
+
+Orador 1
+1 hora 42 minutos 2 segundos1:42:02
+@1 1 hora 42 minutos 2 segundos
+Ya pues terminémosla para que pueda la que la podamos trabajar y por último conversemos en WhatsApp para que estemos podamos contar con los datos.
+D
+Diego Eduardo Navarrete Valderrama
+1 hora 42 minutos 9 segundos1:42:09
+Diego Eduardo Navarrete Valderrama 1 hora 42 minutos 9 segundos
+Vemos, vemos lo del lo del Duncan.
+DR
+Dunkan Hernandez Reyes
+1 hora 42 minutos 11 segundos1:42:11
+Dunkan Hernandez Reyes 1 hora 42 minutos 11 segundos
+Para que puedan verlo así a la rápida, por ejemplo, acá yo en el disco le hice un foro. Claro, esto sería más simple, pero aquí se vería. Por ejemplo, yo hice un commit en un propositor, hice y lo mandó automáticamente el gancho acá.
+
+Orador 1
+1 hora 42 minutos 12 segundos1:42:12
+@1 1 hora 42 minutos 12 segundos
+Dale Dunkan, dale, dale.
+DR
+Dunkan Hernandez Reyes
+1 hora 42 minutos 31 segundos1:42:31
+Dunkan Hernandez Reyes 1 hora 42 minutos 31 segundos
+Eso en tal repositorio no va.
+D
+Diego Eduardo Navarrete Valderrama
+1 hora 42 minutos 31 segundos1:42:31
+Diego Eduardo Navarrete Valderrama 1 hora 42 minutos 31 segundos
+I can.
+Diego Eduardo Navarrete Valderrama 1 hora 42 minutos 36 segundos
+A la rama.
+DR
+Dunkan Hernandez Reyes
+1 hora 42 minutos 36 segundos1:42:36
+Dunkan Hernandez Reyes 1 hora 42 minutos 36 segundos
+Uy, me pasé la rama que se crea una nueva rama y después ya hay un nuevo commit listo.
+D
+Diego Eduardo Navarrete Valderrama
+1 hora 42 minutos 39 segundos1:42:39
+Diego Eduardo Navarrete Valderrama 1 hora 42 minutos 39 segundos
+Sí.
+DR
+Dunkan Hernandez Reyes
+1 hora 42 minutos 44 segundos1:42:44
+Dunkan Hernandez Reyes 1 hora 42 minutos 44 segundos
+Por ejemplo.
+D
+Diego Eduardo Navarrete Valderrama
+1 hora 42 minutos 44 segundos1:42:44
+Diego Eduardo Navarrete Valderrama 1 hora 42 minutos 44 segundos
+Pero te te muestra como que te dicho. O sea, no me refiero, me refiero como en el mensajito que te diga, no sé si cambió botón a rojo, suponte que se fue el cambio.
+DR
+Dunkan Hernandez Reyes
+1 hora 42 minutos 47 segundos1:42:47
+Dunkan Hernandez Reyes 1 hora 42 minutos 47 segundos
+Si te vas ahí.
+Dunkan Hernandez Reyes 1 hora 42 minutos 49 segundos
+A la página web.
+Dunkan Hernandez Reyes 1 hora 42 minutos 55 segundos
+Es que si te va a ir, si te va a ir al aquí mismo al link.
+Dunkan Hernandez Reyes 1 hora 43 minutos
+Arroja el cambio del commit.
+D
+Diego Eduardo Navarrete Valderrama
+1 hora 43 minutos 2 segundos1:43:02
+Diego Eduardo Navarrete Valderrama 1 hora 43 minutos 2 segundos
+ya, perfecto.
+DR
+Dunkan Hernandez Reyes
+1 hora 43 minutos 3 segundos1:43:03
+Dunkan Hernandez Reyes 1 hora 43 minutos 3 segundos
+Te va a GitHub y te muestra el completo del cómic.
+D
+Diego Eduardo Navarrete Valderrama
+1 hora 43 minutos 7 segundos1:43:07
+Diego Eduardo Navarrete Valderrama 1 hora 43 minutos 7 segundos
+At the one.
+DR
+Dunkan Hernandez Reyes
+1 hora 43 minutos 8 segundos1:43:08
+Dunkan Hernandez Reyes 1 hora 43 minutos 8 segundos
+Sí, bueno, no aprendí ayer.
+D
+Diego Eduardo Navarrete Valderrama
+1 hora 43 minutos 9 segundos1:43:09
+Diego Eduardo Navarrete Valderrama 1 hora 43 minutos 9 segundos
+Sí, vamos al tiro.
+
+Orador 1
+1 hora 43 minutos 12 segundos1:43:12
+@1 1 hora 43 minutos 12 segundos
+Mhm.
+D
+Diego Eduardo Navarrete Valderrama
+1 hora 43 minutos 14 segundos1:43:14
+Diego Eduardo Navarrete Valderrama 1 hora 43 minutos 14 segundos
+Bueno.
+DR
+Dunkan Hernandez Reyes
+1 hora 43 minutos 17 segundos1:43:17
+Dunkan Hernandez Reyes 1 hora 43 minutos 17 segundos
+No es una algo compleja, pero si vamos a solamente un repositorio, con eso lo hago yo y estaríamos listos.
+
+Orador 1
+1 hora 43 minutos 21 segundos1:43:21
+@1 1 hora 43 minutos 21 segundos
+Tenemos.
+D
+Diego Eduardo Navarrete Valderrama
+1 hora 43 minutos 25 segundos1:43:25
+Diego Eduardo Navarrete Valderrama 1 hora 43 minutos 25 segundos
+Done.
+DR
+Dunkan Hernandez Reyes
+1 hora 43 minutos 27 segundos1:43:27
+Dunkan Hernandez Reyes 1 hora 43 minutos 27 segundos
+Vale, entonces terminamos la.
+Dunkan Hernandez Reyes 1 hora 43 minutos 30 segundos
+La reunión para que esto se empiece a generar.
+
+Orador 1
+1 hora 43 minutos 33 segundos1:43:33
+@1 1 hora 43 minutos 33 segundos
+Así es, ya chico, un gustazo conocerlo a todos y escucharlo.
+D
+Diego Eduardo Navarrete Valderrama
+1 hora 43 minutos 34 segundos1:43:34
+Diego Eduardo Navarrete Valderrama 1 hora 43 minutos 34 segundos
+Dale, dale.
+DR
+Dunkan Hernandez Reyes
+1 hora 43 minutos 35 segundos1:43:35
+Dunkan Hernandez Reyes 1 hora 43 minutos 35 segundos
+Ah.
+D
+Diego Eduardo Navarrete Valderrama
+1 hora 43 minutos 39 segundos1:43:39
+Diego Eduardo Navarrete Valderrama 1 hora 43 minutos 39 segundos
+Cuídense, que estén bien, ahí estamos, ahí nos vemos después en la tarde noche.
+DR
+Dunkan Hernandez Reyes
+1 hora 43 minutos 41 segundos1:43:41
+Dunkan Hernandez Reyes 1 hora 43 minutos 41 segundos
+Pencelo.
+
+Orador 1
+1 hora 43 minutos 41 segundos1:43:41
+@1 1 hora 43 minutos 41 segundos
+Adiós.
+
+andres aliro fernandez guerrero detuvo la transcripción
