@@ -1,0 +1,248 @@
+rol {
+	id serial pk increments
+	nombre varchar(30)
+	descripcion varchar(200) null
+	fecha_creacion timestamp def(now())
+	fecha_actualizacion timestamp def(now())
+	@index rol_nombre_idx (nombre) using btree
+	@constraint rol_pk primary_key (id)
+}
+
+usuario {
+	id serial pk increments
+	nombre varchar(120)
+	correo varchar(160)
+	password_hash varchar(255)
+	rol_id integer > rol.id
+	estado varchar(30) null
+	fecha_creacion timestamp null
+	fecha_actualizacion timestamp def(now())
+	@index usuario_correo_idx (correo) unique using btree
+	@index uq_usuario_correo (correo) unique using btree
+	@constraint usuario_pk primary_key (id)
+	@constraint usuario_rol_fk foreign_key (rol_id) REFERENCES rol(id)
+	@constraint chk_usuario_estado check (estado IS NULL OR estado IN ('activo','inactivo'))
+}
+
+cliente {
+	id serial pk
+	tipo_cliente_id integer > tipo_cliente.id
+	razon_social varchar(200)
+	rut varchar(12) unique
+	giro varchar(200)
+	representante_legal varchar(200)
+	rut_representante varchar(12) unique
+	direccion varchar(255)
+	region varchar(60)
+	telefono varchar(20)
+	correo varchar(160)
+	estado varchar(20)
+	cliente_desde date
+	fecha_creacion timestamp def(now())
+	fecha_actualizacion timestamp def(now())
+	@index idx_cliente_rut (rut) unique using btree
+	@index idx_cliente_correo (correo) using btree
+	@index uq_cliente_rut (rut) unique using btree
+	@index uq_cliente_rut_representante (rut_representante) unique using btree
+	@constraint chk_cliente_estado check (estado IS NULL OR estado IN ('activo','inactivo'))
+}
+
+tramite {
+	id serial pk
+	folio varchar(30)
+	cliente_id integer > cliente.id
+	agente_id integer > usuario.id
+	estado_actual_id integer > estado_tramite.id
+	tipo_documento varchar(60)
+	plantilla_documento_id integer null *> plantilla_documento.id
+	ruta_archivo varchar(300)
+	referencia_firma_externa varchar(150)
+	fecha_creacion timestamp def(CURRENT_TIMESTAMP)
+	fecha_actualizacion timestamp
+	@index idx_tramite_cliente_id (cliente_id) using btree
+	@index idx_tramite_agente_id (agente_id) using btree
+	@index idx_tramite_folio (folio) using btree
+	@index idx_tramite_estado_actual (estado_actual) using btree
+	@index uq_tramite_folio (folio) unique using btree
+	@constraint chk_tramite_estado_actual check (estado_actual IS NULL OR estado_actual <> '')
+}
+
+historial_estado {
+	id serial pk
+	tramite_id integer *> tramite.id
+	usuario_id integer *> usuario.id
+	estado_id integer *> estado_tramite.id
+	comentario varchar(300)
+	fecha_cambio timestamp def(CURRENT_TIMESTAMP)
+	@index idx_historial_estado_tramite_id (tramite_id) using btree
+	@index idx_historial_estado_fecha_cambio (fecha_cambio) using btree
+	@index idx_historial_estado_tramite_fecha (tramite_id, fecha_cambio) using btree
+	@index idx_historial_estado_tramite_fecha_cambio (tramite_id, fecha_cambio) using btree
+}
+
+plantilla_documento {
+	id serial pk
+	tipo_documento varchar(60)
+	version varchar(20)
+	ruta_plantilla varchar(300)
+	fecha_creacion timestamp def(now())
+	fecha_actualizacion timestamp def(now())
+	@index idx_plantilla_documento_tipo_version (tipo_documento, version) using btree
+}
+
+tipo_cliente {
+	id serial pk
+	nombre varchar(150)
+	descripcion varchar(300)
+	fecha_creacion timestamp def(now())
+	fecha_actualizacion timestamp def(now())
+	@index idx_tipos_cliente_nombre (nombre) using btree
+	@index idx_tipos_cliente_nombre_tipo_cliente (nombre_tipo_cliente) using btree
+}
+
+estado_tramite {
+	id serial pk
+	nombre varchar(30)
+	fecha_creacion timestamp def(now())
+	fecha_actualizacion timestamp def(now())
+	@index idx_estado_tramite_nombre (nombre) unique using btree
+}
+
+Note note_1 [color: #ffeb3a] {
+	Se requiere crear un TRIGGER en PostgreSQL (PL/pgSQL) para `historial_estado`:
+	
+	- BEFORE INSERT ON historial_estado
+	- Para NEW.tramite_id:
+	  - Obtener el último estado_id por fecha_cambio (y/o id si empatan)
+	  - Si último.estado_id = NEW.estado_id => RAISE EXCEPTION
+	
+	Ejemplo (referencial):
+	
+	CREATE OR REPLACE FUNCTION trg_historial_estado_no_duplicado()
+	RETURNS trigger AS $$
+	DECLARE v_last_estado_id integer;
+	BEGIN
+	  SELECT he.estado_id
+	  INTO v_last_estado_id
+	  FROM historial_estado he
+	  WHERE he.tramite_id = NEW.tramite_id
+	  ORDER BY he.fecha_cambio DESC, he.id DESC
+	  LIMIT 1;
+	
+	  IF v_last_estado_id IS NOT NULL AND v_last_estado_id = NEW.estado_id THEN
+	    RAISE EXCEPTION 'No se permite insertar un estado igual al último estado para el mismo tramite';
+	  END IF;
+	
+	  RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql;
+	
+	DROP TRIGGER IF EXISTS trg_historial_estado_no_duplicado_ins ON historial_estado;
+	CREATE TRIGGER trg_historial_estado_no_duplicado_ins
+	BEFORE INSERT ON historial_estado
+	FOR EACH ROW
+	EXECUTE FUNCTION trg_historial_estado_no_duplicado();
+}
+
+Note note_2 [color: #ffeb3a] {
+	Se requiere crear TRIGGERs en PostgreSQL (PL/pgSQL) para normalizar antes de INSERT/UPDATE:
+	
+	- En `usuario`: normalizar `correo`
+	- En `cliente`: normalizar `rut` y `rut_representante`
+	
+	Ejemplo (referencial):
+	
+	CREATE OR REPLACE FUNCTION normalize_usuario_correo()
+	RETURNS trigger AS $$
+	BEGIN
+	  IF NEW.correo IS NOT NULL THEN
+	    NEW.correo := lower(trim(NEW.correo));
+	  END IF;
+	  RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql;
+	
+	DROP TRIGGER IF EXISTS trg_usuario_normalize_correo_ins ON usuario;
+	CREATE TRIGGER trg_usuario_normalize_correo_ins
+	BEFORE INSERT ON usuario
+	FOR EACH ROW
+	EXECUTE FUNCTION normalize_usuario_correo();
+	
+	DROP TRIGGER IF EXISTS trg_usuario_normalize_correo_upd ON usuario;
+	CREATE TRIGGER trg_usuario_normalize_correo_upd
+	BEFORE UPDATE ON usuario
+	FOR EACH ROW
+	EXECUTE FUNCTION normalize_usuario_correo();
+	
+	CREATE OR REPLACE FUNCTION normalize_cliente_rut()
+	RETURNS trigger AS $$
+	BEGIN
+	  IF NEW.rut IS NOT NULL THEN
+	    NEW.rut := lower(trim(NEW.rut));
+	  END IF;
+	  IF NEW.rut_representante IS NOT NULL THEN
+	    NEW.rut_representante := lower(trim(NEW.rut_representante));
+	  END IF;
+	  RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql;
+	
+	DROP TRIGGER IF EXISTS trg_cliente_normalize_rut_ins ON cliente;
+	CREATE TRIGGER trg_cliente_normalize_rut_ins
+	BEFORE INSERT ON cliente
+	FOR EACH ROW
+	EXECUTE FUNCTION normalize_cliente_rut();
+	
+	DROP TRIGGER IF EXISTS trg_cliente_normalize_rut_upd ON cliente;
+	CREATE TRIGGER trg_cliente_normalize_rut_upd
+	BEFORE UPDATE ON cliente
+	FOR EACH ROW
+	EXECUTE FUNCTION normalize_cliente_rut();
+}
+
+Note note_3 [color: #ffeb3a] {
+	Se requiere crear TRIGGER en PostgreSQL (PL/pgSQL) para `tramite`:
+	
+	- BEFORE INSERT OR UPDATE OF agente_id ON tramite
+	- Resolver el rol del usuario referenciado:
+	  - tramite.agente_id -> usuario.id -> usuario.rol_id -> rol.nombre
+	- Si rol.nombre != 'agente' => RAISE EXCEPTION.
+	
+	Ejemplo (referencial):
+	
+	CREATE OR REPLACE FUNCTION trg_tramite_agente_must_be_agente()
+	RETURNS trigger AS $$
+	DECLARE v_rol_nombre text;
+	BEGIN
+	  -- Si agente_id es NULL, permitir (ajustar si quieres NOT NULL)
+	  IF NEW.agente_id IS NULL THEN
+	    RETURN NEW;
+	  END IF;
+	
+	  SELECT r.nombre
+	  INTO v_rol_nombre
+	  FROM usuario u
+	  JOIN rol r ON r.id = u.rol_id
+	  WHERE u.id = NEW.agente_id;
+	
+	  IF v_rol_nombre IS NULL THEN
+	    RAISE EXCEPTION 'agente_id % no referencia un usuario válido', NEW.agente_id;
+	  END IF;
+	
+	  IF v_rol_nombre <> 'agente' THEN
+	    RAISE EXCEPTION 'No se permite asignar tramite.agente_id a un usuario con rol %, solo se permite rol = agente', v_rol_nombre;
+	  END IF;
+	
+	  RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql;
+	
+	DROP TRIGGER IF EXISTS trg_tramite_agente_must_be_agente_biud ON tramite;
+	CREATE TRIGGER trg_tramite_agente_must_be_agente_biud
+	BEFORE INSERT OR UPDATE OF agente_id ON tramite
+	FOR EACH ROW
+	EXECUTE FUNCTION trg_tramite_agente_must_be_agente();
+	
+	Además, se requiere una migración de datos para renombrar el catálogo:
+	- UPDATE rol SET nombre = 'agente' WHERE nombre = 'operador';
+}
