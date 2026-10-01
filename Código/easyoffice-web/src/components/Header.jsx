@@ -1,5 +1,3 @@
-import { Link } from 'react-router-dom'
-
 const NAV_LINKS = [
   { label: 'Inicio', href: '#inicio', active: true },
   { label: 'Domicilio tributario', href: '#domicilio-tributario' },
@@ -28,15 +26,13 @@ export default function Header({ onIniciarTramite }) {
       {/* Header principal */}
       <header className="w-full bg-white border-b border-gray-100 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-24">
-          <Link to="/" className="flex items-center gap-2">
-            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="14" cy="20" r="9" stroke="#22B14C" strokeWidth="4" />
-              <circle cx="26" cy="20" r="9" stroke="#22B14C" strokeWidth="4" />
-            </svg>
-            <span className="text-lg font-bold text-ink leading-tight">
-              easy<br />office
-            </span>
-          </Link>
+          <button
+            type="button"
+            onClick={onIniciarTramite}
+            className="..." // deja las mismas clases que ya tenía el botón verde
+          >
+            Inicia tu trámite
+          </button>
 
           <nav className="hidden lg:flex items-center gap-6">
             {NAV_LINKS.map((link) => (

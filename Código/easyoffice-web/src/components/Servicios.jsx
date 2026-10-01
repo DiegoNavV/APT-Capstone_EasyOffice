@@ -98,9 +98,7 @@ export default function Servicios({ onIniciarTramite }) {
                   <Boton key={cta.label} label={cta.label} href={cta.href} />
                 ))}
                 {servicio.disponibleEnMVP && (
-                  <button
-                    type="button"
-                    onClick={onIniciarTramite}
+                  <button type="button" onClick={onIniciarTramite}
                     className="inline-flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-md border-2 border-primary text-primary hover:bg-primary hover:text-white transition-colors"
                   >
                     INICIAR TRÁMITE →
