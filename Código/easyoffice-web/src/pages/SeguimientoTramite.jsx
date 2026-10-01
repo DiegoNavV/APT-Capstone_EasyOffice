@@ -37,13 +37,18 @@ export default function SeguimientoTramite() {
     setError(null)
     setTramite(null)
     try {
-      // TODO: reemplazar por GET /api/tramites/codigo/{codigo} cuando el backend esté listo.
-      await new Promise((resolve) => setTimeout(resolve, 800))
+      const respuesta = await fetch(`${import.meta.env.VITE_API_URL}/api/tramites/codigo/${codigo}`)
+
+      if (!respuesta.ok) {
+        throw new Error('No encontrado')
+      }
+
+      const datos = await respuesta.json()
       setTramite({
-        codigo_seguimiento: codigo.trim().toUpperCase(),
-        servicio: 'Contrato de servicio',
-        estado_actual: 'firmado',
-        documento_disponible: true
+        codigo_seguimiento: datos.codigo_seguimiento,
+        servicio: datos.nombre_servicio,
+        estado_actual: datos.estado_actual,
+        documento_disponible: datos.documento_disponible
       })
     } catch {
       setError('No encontramos un trámite con ese código. Verifica e intenta nuevamente.')
