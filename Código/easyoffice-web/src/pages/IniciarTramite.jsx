@@ -1,6 +1,13 @@
 import { useState } from 'react'
 import Header from '../components/Header.jsx'
 import Footer from '../components/Footer.jsx'
+import {
+  formatearRut,
+  validarRut,
+  validarEmail,
+  validarTelefono,
+  validarNombre
+} from '../utils/validaciones.js'
 
 // Servicios priorizados del MVP. El código de seguimiento NO se genera aquí:
 // este formulario solo deja la solicitud registrada para que Easy Office
@@ -13,6 +20,8 @@ const SERVICIOS = [
   { id: 0, nombre: 'Otro / no estoy seguro' }
 ]
 
+const MENSAJE_MAX = 500
+
 export default function IniciarTramite() {
   const [form, setForm] = useState({
     nombre: '',
@@ -22,16 +31,39 @@ export default function IniciarTramite() {
     servicioId: '',
     mensaje: ''
   })
+  const [tocado, setTocado] = useState({})
   const [enviando, setEnviando] = useState(false)
   const [enviado, setEnviado] = useState(false)
   const [error, setError] = useState(null)
 
   function setCampo(campo, valor) {
+    if (campo === 'rut') valor = formatearRut(valor)
+    if (campo === 'mensaje') valor = valor.slice(0, MENSAJE_MAX)
     setForm((f) => ({ ...f, [campo]: valor }))
+  }
+
+  function marcarTocado(campo) {
+    setTocado((t) => ({ ...t, [campo]: true }))
+  }
+
+  const errores = {
+    servicioId: form.servicioId === '' ? 'Selecciona un servicio.' : null,
+    nombre: !validarNombre(form.nombre) ? 'Ingresa tu nombre completo (solo letras, mínimo 3 caracteres).' : null,
+    rut: !validarRut(form.rut) ? 'El RUT ingresado no es válido.' : null,
+    email: !validarEmail(form.email) ? 'Ingresa un correo electrónico válido.' : null,
+    telefono: !validarTelefono(form.telefono) ? 'Ingresa un teléfono chileno válido (ej: +56 9 1234 5678).' : null
+  }
+  const formValido = Object.values(errores).every((e) => !e)
+
+  function mostrarError(campo) {
+    return tocado[campo] && errores[campo] ? errores[campo] : null
   }
 
   async function enviarSolicitud(e) {
     e.preventDefault()
+    setTocado({ servicioId: true, nombre: true, rut: true, email: true, telefono: true })
+    if (!formValido) return
+
     setEnviando(true)
     setError(null)
     try {
@@ -73,6 +105,8 @@ export default function IniciarTramite() {
                 tipo="select"
                 value={form.servicioId}
                 onChange={(v) => setCampo('servicioId', v)}
+                onBlur={() => marcarTocado('servicioId')}
+                error={mostrarError('servicioId')}
               >
                 <option value="" disabled>Selecciona un servicio</option>
                 {SERVICIOS.map((s) => (
@@ -84,25 +118,35 @@ export default function IniciarTramite() {
                 label="Nombre completo"
                 value={form.nombre}
                 onChange={(v) => setCampo('nombre', v)}
+                onBlur={() => marcarTocado('nombre')}
+                error={mostrarError('nombre')}
               />
               <Campo
                 label="RUT"
                 value={form.rut}
                 onChange={(v) => setCampo('rut', v)}
+                onBlur={() => marcarTocado('rut')}
+                error={mostrarError('rut')}
+                placeholder="12.345.678-9"
               />
               <Campo
                 label="Correo electrónico"
                 type="email"
                 value={form.email}
                 onChange={(v) => setCampo('email', v)}
+                onBlur={() => marcarTocado('email')}
+                error={mostrarError('email')}
               />
               <Campo
                 label="Teléfono"
                 value={form.telefono}
                 onChange={(v) => setCampo('telefono', v)}
+                onBlur={() => marcarTocado('telefono')}
+                error={mostrarError('telefono')}
+                placeholder="+56 9 1234 5678"
               />
               <Campo
-                label="Mensaje (opcional)"
+                label={`Mensaje (opcional) — ${form.mensaje.length}/${MENSAJE_MAX}`}
                 tipo="textarea"
                 value={form.mensaje}
                 onChange={(v) => setCampo('mensaje', v)}
@@ -112,7 +156,7 @@ export default function IniciarTramite() {
 
               <button
                 type="submit"
-                disabled={enviando || !form.nombre || !form.rut || !form.servicioId}
+                disabled={enviando || !formValido}
                 className="w-full bg-primary hover:bg-primary-dark disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-md transition-colors"
               >
                 {enviando ? 'Enviando...' : 'Enviar solicitud'}
@@ -136,7 +180,10 @@ export default function IniciarTramite() {
   )
 }
 
-function Campo({ label, value, onChange, type = 'text', tipo = 'input', children }) {
+function Campo({ label, value, onChange, onBlur, error, type = 'text', tipo = 'input', placeholder, children }) {
+  const baseClasses = `mt-1 w-full border rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-primary ${
+    error ? 'border-red-400 focus:ring-red-200' : 'border-gray-300 focus:ring-primary/40'
+  }`
   return (
     <label className="block">
       <span className="text-sm font-medium text-gray-700">{label}</span>
@@ -144,7 +191,8 @@ function Campo({ label, value, onChange, type = 'text', tipo = 'input', children
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="mt-1 w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+          onBlur={onBlur}
+          className={baseClasses}
         >
           {children}
         </select>
@@ -153,8 +201,10 @@ function Campo({ label, value, onChange, type = 'text', tipo = 'input', children
         <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
           rows={3}
-          className="mt-1 w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+          placeholder={placeholder}
+          className={`${baseClasses} resize-none`}
         />
       )}
       {tipo === 'input' && (
@@ -162,9 +212,12 @@ function Campo({ label, value, onChange, type = 'text', tipo = 'input', children
           type={type}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="mt-1 w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+          onBlur={onBlur}
+          placeholder={placeholder}
+          className={baseClasses}
         />
       )}
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
     </label>
   )
 }

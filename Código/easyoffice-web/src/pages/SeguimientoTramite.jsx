@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Header from '../components/Header.jsx'
 import Footer from '../components/Footer.jsx'
+import { validarCodigoSeguimiento } from '../utils/validaciones.js'
 
-// Estados posibles definidos en historial_estado: generado, procesando_firma,
-// en_revision (solo caso B), firmado, entregado.
+// Estados posibles definidos en historial_estado: generado, procesando_firma, en_revision (solo caso B), firmado, entregado.
 const ESTADOS_LABEL = {
   generado: 'Generado',
   procesando_firma: 'Procesando firma',
@@ -20,17 +20,25 @@ export default function SeguimientoTramite() {
   const [tramite, setTramite] = useState(null)
   const [error, setError] = useState(null)
 
+  const codigoValido = validarCodigoSeguimiento(codigo)
+
+  function onCambiarCodigo(valor) {
+    const limpio = valor.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)
+    setCodigo(limpio)
+  }
+
   async function consultar(e) {
     e.preventDefault()
+    if (!codigoValido) {
+      setError('El código debe tener 8 caracteres (letras y números).')
+      return
+    }
     setBuscando(true)
     setError(null)
     setTramite(null)
     try {
       // TODO: reemplazar por GET /api/tramites/codigo/{codigo} cuando el backend esté listo.
       await new Promise((resolve) => setTimeout(resolve, 800))
-      if (codigo.trim().length !== 8) {
-        throw new Error('Código inválido')
-      }
       setTramite({
         codigo_seguimiento: codigo.trim().toUpperCase(),
         servicio: 'Contrato de servicio',
@@ -64,7 +72,7 @@ export default function SeguimientoTramite() {
                 type="text"
                 maxLength={8}
                 value={codigo}
-                onChange={(e) => setCodigo(e.target.value.toUpperCase())}
+                onChange={(e) => onCambiarCodigo(e.target.value)}
                 placeholder="Ej: A1B2C3D4"
                 className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm tracking-widest text-center font-semibold focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
               />
@@ -72,7 +80,7 @@ export default function SeguimientoTramite() {
             {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
             <button
               type="submit"
-              disabled={buscando || codigo.length !== 8}
+              disabled={buscando || !codigoValido}
               className="mt-4 w-full bg-primary hover:bg-primary-dark disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-lg transition-colors"
             >
               {buscando ? 'Consultando...' : 'Consultar estado'}
