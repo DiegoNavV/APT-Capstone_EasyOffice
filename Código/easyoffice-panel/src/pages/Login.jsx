@@ -6,7 +6,7 @@ import Button from '../components/Button.jsx'
 import { ApiError, login, obtenerUsuarioActual, verificarDosFactores } from '../lib/api.js'
 import { useAuth } from '../lib/AuthContext.jsx'
 
-export default function Login() {
+export default function LogIn() {
   const navigate = useNavigate()
   const { iniciarSesion } = useAuth()
 
