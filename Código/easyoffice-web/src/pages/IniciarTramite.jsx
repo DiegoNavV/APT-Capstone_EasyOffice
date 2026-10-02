@@ -67,11 +67,23 @@ export default function IniciarTramite() {
     setEnviando(true)
     setError(null)
     try {
-      // TODO: reemplazar por POST /api/solicitudes-contacto cuando el backend
-      // esté listo. El backend debe registrar la solicitud (sin generar
-      // codigo_seguimiento todavía) para que aparezca en el panel de
-      // administradores/agentes y ellos la gestionen manualmente.
-      await new Promise((resolve) => setTimeout(resolve, 900))
+      const respuesta = await fetch(`${import.meta.env.VITE_API_URL}/api/solicitudes-contacto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nombre: form.nombre,
+          rut: form.rut,
+          email: form.email,
+          telefono: form.telefono,
+          servicio_id: form.servicioId ? Number(form.servicioId) : null,
+          mensaje: form.mensaje || null
+        })
+      })
+
+      if (!respuesta.ok) {
+        throw new Error('Respuesta no exitosa del servidor')
+      }
+
       setEnviado(true)
     } catch {
       setError('No pudimos enviar tu solicitud. Intenta nuevamente en unos minutos.')
