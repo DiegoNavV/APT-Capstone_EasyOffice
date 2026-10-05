@@ -12,7 +12,7 @@ async function solicitar(path, options = {}) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     // Obligatorio para que el navegador mande/reciba la cookie httpOnly del
-    // refresh token (ver app/api/v1/endpoints/auth.py en easyoffice-api).
+    // refresh token (ver app/routers/auth.py en easyoffice-backend).
     credentials: 'include',
     ...options
   })
@@ -25,15 +25,11 @@ async function solicitar(path, options = {}) {
 }
 
 export function login({ email, password }) {
-  return solicitar('/api/v1/auth/login', { body: JSON.stringify({ email, password }) })
-}
-
-export function verificarDosFactores({ ticket, codigo }) {
-  return solicitar('/api/v1/auth/2fa/verify', { body: JSON.stringify({ ticket, codigo }) })
+  return solicitar('/api/auth/login', { body: JSON.stringify({ email, password }) })
 }
 
 export function obtenerUsuarioActual(accessToken) {
-  return solicitar('/api/v1/auth/me', {
+  return solicitar('/api/auth/me', {
     method: 'GET',
     headers: { Authorization: `Bearer ${accessToken}` }
   })
@@ -43,5 +39,12 @@ export function cerrarSesionApi() {
   // Revoca el refresh token en el servidor (ver /auth/logout). Si no se
   // llama, la cookie httpOnly sigue siendo válida aunque el frontend "olvide"
   // el access token.
-  return solicitar('/api/v1/auth/logout')
+  return solicitar('/api/auth/logout')
+}
+
+export function refrescarToken() {
+  // No manda body: el refresh token viaja en la cookie httpOnly (credentials:
+  // 'include' en `solicitar`), el navegador la agrega solo. 401 si no hay
+  // cookie, está vencida o fue revocada (ver AuthContext.jsx).
+  return solicitar('/api/auth/refresh')
 }

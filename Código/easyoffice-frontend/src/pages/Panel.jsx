@@ -4,9 +4,15 @@ import { useAuth } from '../lib/AuthContext.jsx'
 // Placeholder: el panel real (listado de trámites, clientes, etc. del
 // mockup de Figma) todavía no está construido. Esta pantalla solo confirma
 // que el login funcionó de punta a punta.
-export default function Panel() {
-  const { usuario, cerrarSesion } = useAuth()
 
+export default function Panel() {
+  const { usuario, verificando, cerrarSesion } = useAuth()
+
+  // Mientras se intenta recuperar la sesión con el refresh token (al cargar
+  // la página, ver AuthContext.jsx) todavía no se sabe si hay sesión o no;
+  // redirigir antes de tiempo mandaría a un usuario con sesión válida de
+  // vuelta al login.
+  if (verificando) return null
   if (!usuario) return <Navigate to="/" replace />
 
   return (
