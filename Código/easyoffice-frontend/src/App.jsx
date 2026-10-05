@@ -1,5 +1,6 @@
 import { Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './lib/AuthContext.jsx'
+
 import LogIn from './pages/LogIn.jsx'
 import Panel from './pages/Panel.jsx'
 

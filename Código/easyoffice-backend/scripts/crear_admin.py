@@ -1,25 +1,24 @@
-"""Crea el primer usuario administrador. Sin esto nadie puede hacer login
+"""Crea un usuario administrador. Sin esto nadie puede iniciar sesión en el panel
 (los clientes de Easy Office nunca tienen cuenta).
 
-Uso:
-    python scripts/crear_admin.py "Nombre Apellido" correo@easyoffice.cl
-    (pide la contraseña de forma interactiva, sin mostrarla en pantalla)
+Uso (con los contenedores levantados):
+    docker compose exec backend python scripts/crear_admin.py "Nombre Apellido" correo@easyoffice.cl
+    (pide la contraseña sin mostrarla en pantalla)
 """
-
 import getpass
 import sys
 from pathlib import Path
 
+# Permite importar "app" al correr el script directamente.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.core.email_utils import normalizar_email, tiene_alias_mas
-from app.core.security import hash_password
-from app.db.session import SessionLocal
-from app.models.rol import Rol
-from app.models.usuario import Usuario
+from app import models  # noqa: E402
+from app.database import SessionLocal  # noqa: E402
+from app.seguridad import hash_password  # noqa: E402
+from app.utils import normalizar_email, tiene_alias_mas  # noqa: E402
 
-# Política de contraseña para cuentas reales (más estricta que el login, que
-# solo valida longitud para no revelar la política a un atacante).
+# Política para cuentas reales: más estricta que el login, que solo valida el
+# largo para no revelarle la política a un atacante.
 _LONGITUD_MINIMA = 12
 
 
@@ -30,10 +29,7 @@ def main() -> None:
 
     nombre, email = sys.argv[1], normalizar_email(sys.argv[2])
     if tiene_alias_mas(email):
-        print(
-            "No se permiten direcciones con '+' (alias de buzón, ej: admin+test@x.cl). "
-            "Usa el correo real sin el signo '+'."
-        )
+        print("No se permiten direcciones con '+' (ej: admin+test@x.cl). Usa el correo real.")
         raise SystemExit(1)
 
     password = getpass.getpass("Contraseña: ")
@@ -46,22 +42,21 @@ def main() -> None:
 
     db = SessionLocal()
     try:
-        if db.query(Usuario).filter(Usuario.email == email).first() is not None:
+        if db.query(models.Usuario).filter(models.Usuario.email == email).first() is not None:
             print(f"Ya existe un usuario con el email {email}.")
             raise SystemExit(1)
 
-        rol_admin = db.query(Rol).filter(Rol.nombre == "administrador").first()
+        rol_admin = db.query(models.Rol).filter(models.Rol.nombre == "administrador").first()
         if rol_admin is None:
-            print("No existe el rol 'administrador'. Corre las migraciones primero: alembic upgrade head")
+            print("No existe el rol 'administrador'. Revisa que se haya cargado db/init/02_seed.sql.")
             raise SystemExit(1)
 
-        usuario = Usuario(
+        db.add(models.Usuario(
             nombre=nombre,
             email=email,
             password_hash=hash_password(password),
             id_rol=rol_admin.id_rol,
-        )
-        db.add(usuario)
+        ))
         db.commit()
         print(f"Administrador creado: {email}")
     finally:
