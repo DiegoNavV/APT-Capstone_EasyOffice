@@ -3,6 +3,7 @@ import { AuthProvider } from './lib/AuthContext.jsx'
 
 import LogIn from './pages/LogIn.jsx'
 import Panel from './pages/Panel.jsx'
+import Solicitudes from './pages/Solicitudes.jsx' // NUEVO
 
 export default function App() {
   return (
@@ -10,6 +11,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<LogIn />} />
         <Route path="/panel" element={<Panel />} />
+        <Route path="/panel/solicitudes" element={<Solicitudes />} /> {/* NUEVO */}
       </Routes>
     </AuthProvider>
   )
