@@ -29,5 +29,18 @@ services:
       db:
         condition: service_healthy
 
+  frontend:
+    # easyoffice-frontend no tiene docker-compose propio: el login del panel
+    # y la API viven juntos en este archivo, asi que el frontend se agrega
+    # aca con un build context relativo en vez de duplicar el compose.
+    build:
+      context: ../easyoffice-frontend
+      args:
+        VITE_API_URL: http://localhost:8000
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
 volumes:
   db_data:
