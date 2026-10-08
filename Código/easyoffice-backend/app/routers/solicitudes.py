@@ -1,8 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app import crud, schemas
+from app import crud, models, schemas
 from app.database import get_db
+from app.seguridad import get_usuario_actual
 
 router = APIRouter(prefix="/api/solicitudes-contacto", tags=["solicitudes-contacto"])
 
@@ -15,6 +18,20 @@ def crear_solicitud_contacto(datos: schemas.SolicitudContactoCreate, db: Session
     if datos.servicio_id is not None and not crud.servicio_existe(db, datos.servicio_id):
         raise HTTPException(status_code=404, detail="El servicio indicado no existe.")
     return crud.crear_solicitud(db, datos)
+
+
+@router.get("", response_model=list[schemas.SolicitudListadoOut])
+def listar_solicitudes_contacto(
+    estado: Optional[str] = Query(default=None, max_length=30),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    _usuario: models.Usuario = Depends(get_usuario_actual),
+):
+    """Uso del panel de agentes/admins (requiere login): lista las solicitudes de
+    contacto, las más recientes primero. Devuelve datos personales de clientes,
+    por eso NO puede quedar público. Filtro opcional ?estado=pendiente|convertido."""
+    return crud.listar_solicitudes(db, estado=estado, limit=limit, offset=offset)
 
 
 @router.post("/{id_solicitud}/convertir", response_model=schemas.TramiteOut)
