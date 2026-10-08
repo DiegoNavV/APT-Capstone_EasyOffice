@@ -39,6 +39,58 @@ def obtener_solicitud(db: Session, id_solicitud: int) -> models.SolicitudContact
     return db.get(models.SolicitudContacto, id_solicitud)
 
 
+def listar_solicitudes(
+    db: Session,
+    estado: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[schemas.SolicitudListadoOut]:
+    """Solicitudes de contacto, las más recientes primero. Para cada una ya
+    convertida incluye el código de seguimiento de su trámite."""
+    consulta = db.query(models.SolicitudContacto)
+    if estado:
+        consulta = consulta.filter(models.SolicitudContacto.estado == estado)
+    # id_solicitud como desempate: fecha_creacion tiene resolución de segundos.
+    solicitudes = (
+        consulta.order_by(
+            models.SolicitudContacto.fecha_creacion.desc(),
+            models.SolicitudContacto.id_solicitud.desc(),
+        )
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    # Una sola consulta extra para todos los códigos (evita N+1).
+    ids_tramite = [s.id_tramite_generado for s in solicitudes if s.id_tramite_generado]
+    codigos: dict[int, str] = {}
+    if ids_tramite:
+        filas = (
+            db.query(models.Tramite.id_tramite, models.Tramite.codigo_seguimiento)
+            .filter(models.Tramite.id_tramite.in_(ids_tramite))
+            .all()
+        )
+        codigos = {fila.id_tramite: fila.codigo_seguimiento for fila in filas}
+
+    return [
+        schemas.SolicitudListadoOut(
+            id_solicitud=s.id_solicitud,
+            nombre=s.nombre,
+            rut=s.rut,
+            email=s.email,
+            telefono=s.telefono,
+            mensaje=s.mensaje,
+            estado=s.estado,
+            id_servicio=s.id_servicio,
+            nombre_servicio=s.servicio.nombre if s.servicio else None,
+            id_tramite_generado=s.id_tramite_generado,
+            codigo_seguimiento=codigos.get(s.id_tramite_generado),
+            fecha_creacion=s.fecha_creacion,
+        )
+        for s in solicitudes
+    ]
+
+
 def _generar_codigo_unico(db: Session) -> str:
     alfabeto = string.ascii_uppercase + string.digits
     for _ in range(20):

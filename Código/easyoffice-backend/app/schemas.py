@@ -78,6 +78,22 @@ class SolicitudContactoOut(BaseModel):
     class Config:
         from_attributes = True
 
+# ---------- Listado de solicitudes (panel de agentes/admins) ----------
+
+class SolicitudListadoOut(BaseModel):
+    id_solicitud: int
+    nombre: str
+    rut: Optional[str]
+    email: Optional[str]
+    telefono: Optional[str]
+    mensaje: Optional[str]
+    estado: str
+    id_servicio: Optional[int]
+    nombre_servicio: Optional[str]
+    id_tramite_generado: Optional[int]
+    # Solo viene cuando la solicitud ya fue convertida; el agente lo necesita para reenviarle el código al cliente si lo perdió.
+    codigo_seguimiento: Optional[str]
+    fecha_creacion: datetime
 
 # ---------- Conversión solicitud -> trámite (acción del agente) ----------
 
