@@ -12,7 +12,7 @@ ON CONFLICT (id_rol) DO NOTHING;
 
 -- Usuario de prueba para poder asignar/convertir solicitudes. password_hash
 -- es un valor ficticio a propósito: esta cuenta NO puede iniciar sesión.
--- Para crear cuentas reales usar scripts/crear_admin.py.
+-- Para crear cuentas reales usar scripts/crear_user.py.
 INSERT INTO usuario (id_usuario, id_rol, nombre, email, password_hash, activo) VALUES
     (1, 2, 'Agente de Prueba', 'agente.prueba@easyoffice.cl', 'CAMBIAR_CUANDO_EXISTA_AUTH', TRUE)
 ON CONFLICT (id_usuario) DO NOTHING;
