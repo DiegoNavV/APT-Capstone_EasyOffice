@@ -1,4 +1,4 @@
-import { Navigate } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom' // NUEVO: se agregó Link
 import { useAuth } from '../lib/AuthContext.jsx'
 
 // Placeholder: el panel real (listado de trámites, clientes, etc. del
@@ -25,13 +25,23 @@ export default function Panel() {
         <p className="mt-1 text-xs text-ink-muted">
           El panel real (trámites, clientes, reportes) todavía no está construido.
         </p>
-        <button
-          type="button"
-          onClick={cerrarSesion}
-          className="mt-6 text-sm font-medium text-ink-link hover:underline"
+        {/* NUEVO: enlace a la pantalla de solicitudes */}
+        <Link
+          to="/panel/solicitudes"
+          className="mt-6 inline-block bg-brand-primary hover:bg-brand-dark text-white text-sm font-semibold px-6 py-3 rounded-[10px] transition-colors"
         >
-          Cerrar sesión
-        </button>
+          Ver solicitudes de contacto
+        </Link>
+        {/* NUEVO: el botón de cerrar sesión ahora va dentro de un div */}
+        <div>
+          <button
+            type="button"
+            onClick={cerrarSesion}
+            className="mt-6 text-sm font-medium text-ink-link hover:underline"
+          >
+            Cerrar sesión
+          </button>
+        </div>
       </div>
     </div>
   )
