@@ -1,12 +1,9 @@
 """
-Modelos SQLAlchemy — SOLO las tablas que usa el módulo
-"formulario de contacto -> solicitud -> trámite":
+Modelos SQLAlchemy. Deben coincidir con db/init/01_schema.sql.
 
-  servicio_contratado, solicitud_contacto, cliente, tramite, historial_estado
-
-No se incluyen rol/usuario con lógica de autenticación: ese es otro módulo
-(Épica A). Acá usuario solo existe como tabla mínima para que la FK de
-id_usuario_asignado / id_usuario_responsable funcione.
+  - Login del panel (Épica A): rol, usuario, refresh_token
+  - Formulario de contacto -> solicitud -> trámite:
+    servicio_contratado, solicitud_contacto, cliente, tramite, historial_estado
 """
 from sqlalchemy import (
     Column, Integer, String, Text, Boolean, TIMESTAMP, ForeignKey, func
@@ -16,12 +13,58 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
+class Rol(Base):
+    __tablename__ = "rol"
+
+    id_rol = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String(50), nullable=False, unique=True)  # "administrador" | "agente"
+    descripcion = Column(Text)
+
+
 class Usuario(Base):
+    """Cuentas del panel interno (administradores y agentes). Los clientes de
+    Easy Office no tienen cuenta."""
+
     __tablename__ = "usuario"
 
     id_usuario = Column(Integer, primary_key=True, index=True)
+    id_rol = Column(Integer, ForeignKey("rol.id_rol"), nullable=False)
     nombre = Column(String(150), nullable=False)
     email = Column(String(150), nullable=False, unique=True)
+    password_hash = Column(String(255), nullable=False)
+    activo = Column(Boolean, nullable=False, default=True)
+    fecha_creacion = Column(TIMESTAMP, server_default=func.now())
+
+    # Bloqueo por fuerza bruta: se suma 1 por cada contraseña incorrecta y,
+    # al llegar al máximo, la cuenta queda bloqueada hasta `bloqueado_hasta`.
+    intentos_fallidos = Column(Integer, nullable=False, default=0)
+    bloqueado_hasta = Column(TIMESTAMP)
+    ultimo_login = Column(TIMESTAMP)
+
+    rol = relationship("Rol")
+
+    @property
+    def rol_nombre(self) -> str:
+        return self.rol.nombre
+
+
+class RefreshToken(Base):
+    """Una fila por sesión iniciada. Solo se guarda el hash del token.
+
+    Rotación: cada vez que se usa en /api/auth/refresh, el token se marca
+    `revocado` y se enlaza al nuevo con `reemplazado_por_id`. Si después alguien
+    presenta un token ya revocado, es señal de robo y se cierran todas las
+    sesiones del usuario (ver app/routers/auth.py)."""
+
+    __tablename__ = "refresh_token"
+
+    id_refresh_token = Column(Integer, primary_key=True, index=True)
+    id_usuario = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=False, index=True)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    creado_en = Column(TIMESTAMP, server_default=func.now())
+    expira_en = Column(TIMESTAMP, nullable=False)
+    revocado = Column(Boolean, nullable=False, default=False)
+    reemplazado_por_id = Column(Integer, ForeignKey("refresh_token.id_refresh_token"))
 
 
 class Cliente(Base):

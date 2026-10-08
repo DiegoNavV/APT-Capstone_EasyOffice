@@ -25,8 +25,18 @@ from sqlalchemy.pool import StaticPool
 from app import models
 from app.database import Base, get_db
 from app.main import app
+from app.seguridad import hash_password, limiter
 
 TEST_DATABASE_URL = "sqlite://"
+
+# Contraseña del usuario semilla. El hash se calcula una sola vez (Argon2 es
+# lento a propósito) y se reutiliza en cada test.
+PASSWORD_PRUEBA = "clave-de-prueba-123"
+_PASSWORD_HASH_PRUEBA = hash_password(PASSWORD_PRUEBA)
+
+# Sin esto, los tests que hacen muchos logins chocan con el límite de
+# 10/minuto por IP de /api/auth/login.
+limiter.enabled = False
 
 
 @pytest.fixture()
@@ -69,7 +79,8 @@ def db_session(TestingSessionLocal):
 
 @pytest.fixture()
 def seed(db_session):
-    """Datos semilla mínimos: un servicio activo, uno inactivo y un usuario."""
+    """Datos semilla mínimos: un servicio activo, uno inactivo y un usuario
+    (rol agente, contraseña PASSWORD_PRUEBA)."""
     servicio = models.ServicioContratado(
         nombre="Constitución de Sociedad",
         descripcion="Formalización de empresa en un día",
@@ -80,7 +91,12 @@ def seed(db_session):
         nombre="Servicio descontinuado",
         activo=False,
     )
-    usuario = models.Usuario(nombre="Agente Prueba", email="agente@easyoffice.cl")
+    usuario = models.Usuario(
+        nombre="Agente Prueba",
+        email="agente@easyoffice.cl",
+        password_hash=_PASSWORD_HASH_PRUEBA,
+        rol=models.Rol(nombre="agente"),
+    )
     db_session.add_all([servicio, servicio_inactivo, usuario])
     db_session.commit()
     for obj in (servicio, servicio_inactivo, usuario):
@@ -89,6 +105,7 @@ def seed(db_session):
         "servicio": servicio,
         "servicio_inactivo": servicio_inactivo,
         "usuario": usuario,
+        "password": PASSWORD_PRUEBA,
     }
 
 

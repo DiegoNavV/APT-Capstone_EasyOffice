@@ -1,10 +1,42 @@
-"""Esquemas Pydantic del módulo solicitud_contacto / tramite (seguimiento)."""
+"""Esquemas Pydantic: login del panel y módulo solicitud_contacto / tramite (seguimiento)."""
 from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-from app.utils import normalizar_rut
+from app.utils import normalizar_email, normalizar_rut
+
+
+# ---------- Login del panel (agentes y administradores) ----------
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    # Solo se valida el largo; la seguridad la da el hash Argon2id. Exigir
+    # "complejidad" (mayúsculas, símbolos) está desaconsejado por NIST/OWASP.
+    password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def normalizar_email_campo(cls, v):
+        # "Admin@X.cl " y "admin@x.cl" son la misma cuenta.
+        return normalizar_email(v)
+
+
+class AccessToken(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in_minutes: int
+
+
+class UsuarioOut(BaseModel):
+    id_usuario: int
+    nombre: str
+    email: str
+    rol_nombre: str
+    ultimo_login: Optional[datetime]
+
+    class Config:
+        from_attributes = True
 
 
 # ---------- Solicitud de contacto (formulario público "Contrata aquí") ----------

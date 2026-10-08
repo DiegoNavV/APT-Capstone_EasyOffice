@@ -38,8 +38,29 @@ CREATE TABLE usuario (
     email           VARCHAR(150) NOT NULL UNIQUE,
     password_hash   VARCHAR(255) NOT NULL,
     activo          BOOLEAN NOT NULL DEFAULT TRUE,
-    fecha_creacion  TIMESTAMP NOT NULL DEFAULT now()
+    fecha_creacion  TIMESTAMP NOT NULL DEFAULT now(),
+    -- Bloqueo por fuerza bruta y último acceso (login del panel)
+    intentos_fallidos INTEGER NOT NULL DEFAULT 0,
+    bloqueado_hasta   TIMESTAMP,
+    ultimo_login      TIMESTAMP
 );
+
+-- =========================
+-- TABLA: refresh_token
+-- (una fila por sesión del panel; solo se guarda el hash SHA-256 del token.
+--  Al renovarse, el token usado queda revocado y apunta al nuevo)
+-- =========================
+CREATE TABLE refresh_token (
+    id_refresh_token   SERIAL PRIMARY KEY,
+    id_usuario         INTEGER NOT NULL REFERENCES usuario(id_usuario),
+    token_hash         VARCHAR(64) NOT NULL UNIQUE,
+    creado_en          TIMESTAMP NOT NULL DEFAULT now(),
+    expira_en          TIMESTAMP NOT NULL,
+    revocado           BOOLEAN NOT NULL DEFAULT FALSE,
+    reemplazado_por_id INTEGER REFERENCES refresh_token(id_refresh_token)
+);
+
+CREATE INDEX idx_refresh_token_id_usuario ON refresh_token(id_usuario);
 
 -- =========================
 -- TABLA: servicio_contratado

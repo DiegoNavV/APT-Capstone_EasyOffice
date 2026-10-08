@@ -20,11 +20,16 @@ services:
     build: .
     environment:
       DATABASE_URL: postgresql+psycopg2://easyoffice:easyoffice@db:5432/crm_easyoffice
+      # Firma de los access tokens del login. Definir uno propio en un archivo
+      # .env junto a este compose (ver .env.example); el valor por defecto es
+      # solo para desarrollo.
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-cambiar-esto-en-cada-entorno}
     ports:
       - "8000:8000"
     volumes:
       - ./app:/app/app
       - ./tests:/app/tests
+      - ./scripts:/app/scripts
     depends_on:
       db:
         condition: service_healthy
