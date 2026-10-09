@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { Navigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { ApiError } from '../lib/api.js'
 import { convertirSolicitud, listarSolicitudes } from '../lib/solicitudesApi.js'
+import Sidebar from '../components/Sidebar.jsx'
 
 // Solicitudes que llegan desde el formulario "Contrata aquí" del sitio público.
 // El agente/admin confirma el pago manual y la convierte en trámite: ahí se
@@ -259,7 +260,7 @@ export default function Solicitudes() {
     setPagina(0)
   }
 
-  // Mismo patrón que Panel.jsx: esperar a que termine de recuperarse la sesión
+  // Mismo patrón que Tramites.jsx: esperar a que termine de recuperarse la sesión
   // antes de decidir si hay que mandar al login.
   if (verificando) return null
   if (!usuario) return <Navigate to="/" replace />
@@ -272,102 +273,99 @@ export default function Solicitudes() {
         : 'Todavía no han llegado solicitudes desde el sitio.'
 
   return (
-    <div className="bg-canvas min-h-screen">
-      <header className="bg-surface border-b border-line">
-        <div className="max-w-[880px] mx-auto px-4 py-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-lg font-semibold text-ink-primary">Solicitudes de contacto</h1>
-            <p className="text-xs text-ink-muted">
-              {usuario.nombre} · {usuario.rol_nombre}
-            </p>
-          </div>
+    <div className="bg-canvas flex h-screen items-start">
+      <Sidebar activo="solicitudes" />
+
+      <div className="flex flex-1 flex-col h-full min-w-0">
+        <header className="bg-surface border-b border-line flex items-center justify-between px-7 py-3.5 shrink-0">
+          <h1 className="text-lg font-semibold text-ink-primary">Solicitudes de contacto</h1>
           <div className="flex items-center gap-4 text-sm font-medium">
-            <Link to="/panel" className="text-ink-link hover:underline">
-              Volver al panel
-            </Link>
+            <span className="text-xs text-ink-muted">
+              {usuario.nombre} · {usuario.rol_nombre}
+            </span>
             <button type="button" onClick={cerrarSesion} className="text-ink-link hover:underline">
               Cerrar sesión
             </button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <main className="max-w-[880px] mx-auto px-4 py-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex gap-2" role="group" aria-label="Filtrar por estado">
-            {FILTROS.map((f) => (
-              <button
-                key={f.valor || 'todas'}
-                type="button"
-                onClick={() => cambiarFiltro(f.valor)}
-                aria-pressed={filtro === f.valor}
-                className={`text-sm font-medium px-4 py-2 rounded-full border transition-colors ${
-                  filtro === f.valor
-                    ? 'bg-brand-primary border-brand-primary text-white'
-                    : 'bg-surface border-line text-ink-secondary hover:border-ink-muted'
-                }`}
-              >
-                {f.texto}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={() => setRecarga((n) => n + 1)}
-            disabled={cargando}
-            className="text-sm font-medium text-ink-link hover:underline disabled:opacity-60"
-          >
-            Actualizar
-          </button>
-        </div>
-
-        <div className="mt-5 space-y-4">
-          {error ? (
-            <div role="alert" className="bg-surface border border-line rounded-2xl p-6 text-center">
-              <p className="text-sm text-red-600">{error}</p>
-              <button
-                type="button"
-                onClick={() => setRecarga((n) => n + 1)}
-                className="mt-3 text-sm font-medium text-ink-link hover:underline"
-              >
-                Reintentar
-              </button>
-            </div>
-          ) : cargando && items.length === 0 ? (
-            <p className="text-sm text-ink-secondary text-center py-10">Cargando solicitudes…</p>
-          ) : items.length === 0 ? (
-            <p className="text-sm text-ink-secondary text-center py-10">{mensajeVacio}</p>
-          ) : (
-            <div className={`space-y-4 ${cargando ? 'opacity-60' : ''}`}>
-              {items.map((s) => (
-                <TarjetaSolicitud key={s.id_solicitud} solicitud={s} onConvertir={convertir} />
+        <main className="flex-1 overflow-y-auto px-7 py-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex gap-2" role="group" aria-label="Filtrar por estado">
+              {FILTROS.map((f) => (
+                <button
+                  key={f.valor || 'todas'}
+                  type="button"
+                  onClick={() => cambiarFiltro(f.valor)}
+                  aria-pressed={filtro === f.valor}
+                  className={`text-sm font-medium px-4 py-2 rounded-full border transition-colors ${
+                    filtro === f.valor
+                      ? 'bg-brand-primary border-brand-primary text-white'
+                      : 'bg-surface border-line text-ink-secondary hover:border-ink-muted'
+                  }`}
+                >
+                  {f.texto}
+                </button>
               ))}
             </div>
-          )}
-        </div>
-
-        {(pagina > 0 || hayMas) && (
-          <div className="mt-6 flex items-center justify-between text-sm font-medium">
             <button
               type="button"
-              onClick={() => setPagina((p) => p - 1)}
-              disabled={pagina === 0 || cargando}
-              className="text-ink-link hover:underline disabled:opacity-40 disabled:no-underline"
+              onClick={() => setRecarga((n) => n + 1)}
+              disabled={cargando}
+              className="text-sm font-medium text-ink-link hover:underline disabled:opacity-60"
             >
-              ← Anterior
-            </button>
-            <span className="text-ink-muted">Página {pagina + 1}</span>
-            <button
-              type="button"
-              onClick={() => setPagina((p) => p + 1)}
-              disabled={!hayMas || cargando}
-              className="text-ink-link hover:underline disabled:opacity-40 disabled:no-underline"
-            >
-              Siguiente →
+              Actualizar
             </button>
           </div>
-        )}
-      </main>
+
+          <div className="mt-5 space-y-4">
+            {error ? (
+              <div role="alert" className="bg-surface border border-line rounded-2xl p-6 text-center">
+                <p className="text-sm text-red-600">{error}</p>
+                <button
+                  type="button"
+                  onClick={() => setRecarga((n) => n + 1)}
+                  className="mt-3 text-sm font-medium text-ink-link hover:underline"
+                >
+                  Reintentar
+                </button>
+              </div>
+            ) : cargando && items.length === 0 ? (
+              <p className="text-sm text-ink-secondary text-center py-10">Cargando solicitudes…</p>
+            ) : items.length === 0 ? (
+              <p className="text-sm text-ink-secondary text-center py-10">{mensajeVacio}</p>
+            ) : (
+              <div className={`space-y-4 ${cargando ? 'opacity-60' : ''}`}>
+                {items.map((s) => (
+                  <TarjetaSolicitud key={s.id_solicitud} solicitud={s} onConvertir={convertir} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {(pagina > 0 || hayMas) && (
+            <div className="mt-6 flex items-center justify-between text-sm font-medium">
+              <button
+                type="button"
+                onClick={() => setPagina((p) => p - 1)}
+                disabled={pagina === 0 || cargando}
+                className="text-ink-link hover:underline disabled:opacity-40 disabled:no-underline"
+              >
+                ← Anterior
+              </button>
+              <span className="text-ink-muted">Página {pagina + 1}</span>
+              <button
+                type="button"
+                onClick={() => setPagina((p) => p + 1)}
+                disabled={!hayMas || cargando}
+                className="text-ink-link hover:underline disabled:opacity-40 disabled:no-underline"
+              >
+                Siguiente →
+              </button>
+            </div>
+          )}
+        </main>
+      </div>
     </div>
   )
 }
