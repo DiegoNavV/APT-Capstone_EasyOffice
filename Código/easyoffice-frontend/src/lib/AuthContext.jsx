@@ -17,7 +17,7 @@ export function AuthProvider({ children }) {
   const [usuario, setUsuario] = useState(null)
   // true mientras se intenta recuperar la sesión al cargar la página. Las
   // pantallas que dependen de `usuario` deben esperar a que esto sea false
-  // antes de decidir si redirigir al login (ver Panel.jsx y LogIn.jsx).
+  // antes de decidir si redirigir al login (ver Tramites.jsx y LogIn.jsx).
   const [verificando, setVerificando] = useState(true)
 
   // Timer del refresco proactivo (setTimeout), para poder cancelarlo en un

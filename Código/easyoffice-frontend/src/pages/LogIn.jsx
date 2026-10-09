@@ -8,7 +8,7 @@ import { useAuth } from '../lib/AuthContext.jsx'
 
 // Pantalla de inicio de sesión (ruta "/").
 // El usuario ingresa correo + contraseña; si son correctos se guarda la sesión
-// y se navega a /panel.
+// y se navega a /panel/tramites (panel principal).
 
 export default function LogIn() {
   const navigate = useNavigate()
@@ -26,7 +26,7 @@ export default function LogIn() {
   // sesión al cargar la página, no tiene sentido mostrarle el login a alguien
   // que ya está autenticado.
   useEffect(() => {
-    if (!verificando && usuario) navigate('/panel', { replace: true })
+    if (!verificando && usuario) navigate('/panel/tramites', { replace: true })
   }, [verificando, usuario, navigate])
 
   // Se ejecuta al enviar el formulario.
@@ -45,7 +45,7 @@ export default function LogIn() {
       // 3. Guarda la sesión en el AuthContext (programa el refresco
       //    automático antes de que expire) y entra al panel.
       iniciarSesion(access_token, usuario, expires_in_minutes)
-      navigate('/panel')
+      navigate('/panel/tramites')
 
     } catch (err) {
       // ApiError = el servidor respondió con un error (ej. "Credenciales inválidas").
