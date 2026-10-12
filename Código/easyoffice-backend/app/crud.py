@@ -21,10 +21,6 @@ def servicio_existe(db: Session, id_servicio: int) -> bool:
     return db.get(models.ServicioContratado, id_servicio) is not None
 
 
-def usuario_existe(db: Session, id_usuario: int) -> bool:
-    return db.get(models.Usuario, id_usuario) is not None
-
-
 def crear_solicitud(db: Session, datos: schemas.SolicitudContactoCreate) -> models.SolicitudContacto:
     solicitud = models.SolicitudContacto(
         nombre=datos.nombre,
@@ -138,17 +134,16 @@ def _generar_codigo_unico(db: Session) -> str:
 def convertir_solicitud_a_tramite(
     db: Session,
     solicitud: models.SolicitudContacto,
-    id_usuario_responsable: int | None,
+    id_usuario_responsable: int,
 ) -> models.Tramite:
-    """Confirma el pago manual de una solicitud y la convierte en un trámite real,
-    generando su código de seguimiento. Acción exclusiva de un agente/admin."""
+    """Confirma el pago manual de una solicitud y la convierte en un trámite real, generando su código de seguimiento. 
+    Acción exclusiva de un agente/admin: el responsable es siempre quien la ejecuta (lo valida get_usuario_actual en el router, por eso 
+    aquí no se vuelve a comprobar que exista)."""
 
     if solicitud.estado == "convertido":
         raise ValueError("Esta solicitud ya fue convertida en un trámite.")
     if not solicitud.id_servicio:
         raise ValueError("La solicitud no tiene un servicio definido; no se puede convertir.")
-    if id_usuario_responsable is not None and not usuario_existe(db, id_usuario_responsable):
-        raise ValueError(f"El usuario responsable {id_usuario_responsable} no existe.")
 
     # El cliente no tiene cuenta; se busca o se crea por RUT (ya normalizado por
     # el schema al crear la solicitud) para no duplicarlo si ya había hecho una

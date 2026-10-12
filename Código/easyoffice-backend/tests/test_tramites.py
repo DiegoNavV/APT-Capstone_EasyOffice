@@ -8,10 +8,10 @@ from app import crud, models
 
 
 @pytest.fixture()
-def tramite_generado(crear_solicitud, convertir, seed):
+def tramite_generado(crear_solicitud, convertir):
     """Crea solicitud → la convierte → devuelve el JSON del trámite."""
     sol = crear_solicitud()
-    resp = convertir(sol["id_solicitud"], seed["usuario"].id_usuario)
+    resp = convertir(sol["id_solicitud"])
     assert resp.status_code == 200
     return resp.json()
 
@@ -172,14 +172,13 @@ class TestInfra:
             "Access-Control-Request-Method": "GET"})
         assert "access-control-allow-origin" not in resp.headers
 
-    def test_endpoint_convertir_no_tiene_autenticacion(self, crear_solicitud, client):
-        """OBSERVACIÓN IMPORTANTE: /convertir es una acción de agente interno
-        (confirma un pago), pero hoy cualquiera sin login puede llamarla y
-        generar trámites + códigos. Seguramente la auth está pendiente; este
-        test fallará (bien) cuando se agregue, recordándote actualizarlo."""
+    def test_endpoint_convertir_exige_login(self, crear_solicitud, client):
+        """/convertir es una acción de agente interno (confirma un pago): sin
+        sesión no genera trámites ni códigos. El detalle está en
+        test_solicitudes.py::TestConvertirAcceso."""
         sol = crear_solicitud()
-        resp = client.post(f"/api/solicitudes-contacto/{sol['id_solicitud']}/convertir", json={})
-        assert resp.status_code == 200
+        resp = client.post(f"/api/solicitudes-contacto/{sol['id_solicitud']}/convertir")
+        assert resp.status_code == 401
 
     def test_drop_all_falla_por_fk_circular(self, tramite_generado, engine):
         """HALLAZGO: solicitud_contacto.id_tramite_generado -> tramite y

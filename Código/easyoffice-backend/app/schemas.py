@@ -105,10 +105,6 @@ class NovedadesSolicitudesOut(BaseModel):
 
 # ---------- Conversión solicitud -> trámite (acción del agente) ----------
 
-class ConvertirSolicitudRequest(BaseModel):
-    id_usuario_responsable: Optional[int] = None
-
-
 class TramiteOut(BaseModel):
     id_tramite: int
     codigo_seguimiento: str

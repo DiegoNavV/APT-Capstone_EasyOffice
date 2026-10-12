@@ -21,8 +21,10 @@ def auth(seed):
 
 
 @pytest.fixture()
-def hacer_tramite(crear_solicitud, convertir, seed):
-    """Crea solicitud -> convierte -> devuelve el JSON del trámite."""
+def hacer_tramite(crear_solicitud, convertir, db_session):
+    """Crea solicitud -> convierte -> devuelve el JSON del trámite. La conversión
+    deja como responsable al usuario de la sesión; con agente=False se le quita
+    (puede ocurrir más adelante, p. ej. al reasignar) para probar "Sin asignar"."""
     contador = {"n": 0}
 
     def _hacer(rut=None, nombre="Juan Pérez", agente=False, **overrides):
@@ -30,10 +32,11 @@ def hacer_tramite(crear_solicitud, convertir, seed):
         if rut is None:
             rut = f"{10000000 + contador['n']}-{contador['n'] % 10}"
         sol = crear_solicitud(rut=rut, nombre=nombre, **overrides)
-        resp = convertir(
-            sol["id_solicitud"], seed["usuario"].id_usuario if agente else None
-        )
+        resp = convertir(sol["id_solicitud"])
         assert resp.status_code == 200, resp.text
+        if not agente:
+            db_session.get(models.Tramite, resp.json()["id_tramite"]).id_usuario_responsable = None
+            db_session.commit()
         return resp.json()
 
     return _hacer

@@ -36,11 +36,11 @@ export function listarSolicitudes({ accessToken, estado, limit, offset }) {
 }
 
 // Confirma el pago manual y convierte la solicitud en trámite (genera el código).
-export function convertirSolicitud({ accessToken, idSolicitud, idUsuarioResponsable }) {
+// No se envía el responsable: el backend usa al usuario de la sesión.
+export function convertirSolicitud({ accessToken, idSolicitud }) {
   return pedir(`/api/solicitudes-contacto/${idSolicitud}/convertir`, {
     accessToken,
-    method: 'POST',
-    body: { id_usuario_responsable: idUsuarioResponsable }
+    method: 'POST'
   })
 }
 

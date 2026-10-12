@@ -25,7 +25,7 @@ from sqlalchemy.pool import StaticPool
 from app import models
 from app.database import Base, get_db
 from app.main import app
-from app.seguridad import hash_password, limiter
+from app.seguridad import crear_access_token, hash_password, limiter
 
 TEST_DATABASE_URL = "sqlite://"
 
@@ -159,13 +159,19 @@ def crear_solicitud(client, seed):
 
 
 @pytest.fixture()
-def convertir(client):
-    def _convertir(id_solicitud, id_usuario_responsable=None):
-        body = {}
-        if id_usuario_responsable is not None:
-            body["id_usuario_responsable"] = id_usuario_responsable
+def headers_agente(seed):
+    """Header Bearer de la cuenta semilla (mismo token que entrega /api/auth/login)."""
+    u = seed["usuario"]
+    return {"Authorization": f"Bearer {crear_access_token(u.id_usuario, 'agente')}"}
+
+
+@pytest.fixture()
+def convertir(client, headers_agente):
+    """Convierte una solicitud como el agente semilla (convertir exige login y el
+    responsable del trámite es siempre quien lo convierte)."""
+    def _convertir(id_solicitud):
         return client.post(
-            f"/api/solicitudes-contacto/{id_solicitud}/convertir", json=body
+            f"/api/solicitudes-contacto/{id_solicitud}/convertir", headers=headers_agente
         )
 
     return _convertir
