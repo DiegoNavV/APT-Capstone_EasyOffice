@@ -4,10 +4,8 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Tokens tal como quedaron en el mockup de Figma (página "Mockup
-        // Cliente", pantalla "1 · Login"). Son provisionales igual que en el
-        // mockup -> falta reemplazarlos cuando Easy Office confirme su
-        // paleta de marca real para el panel interno.
+        // Tokens tal como quedaron en el mockup de Figma (página "Mockup Cliente", pantalla "1 · Login"). Son provisionales igual que en el
+        // mockup -> falta reemplazarlos cuando Easy Office confirme su paleta de marca real para el panel interno.
         brand: {
           primary: "#0ead84",
           dark: "#0c9573",
