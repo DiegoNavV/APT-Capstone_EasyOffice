@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { ApiError } from '../lib/api.js'
 import { convertirSolicitud, listarSolicitudes } from '../lib/solicitudesApi.js'
+import { useNovedadesSolicitudes } from '../lib/useNovedadesSolicitudes.js'
 import PaginaPanel from '../components/PaginaPanel.jsx'
 
 // Solicitudes que llegan desde el formulario "Contrata aquí" del sitio público.
@@ -17,8 +18,8 @@ const FILTROS = [
 
 function formatearFecha(iso) {
   if (!iso) return '—'
-  // El backend guarda la fecha en UTC pero la devuelve sin zona horaria
-  // ("2026-10-08T19:42:11"); sin la "Z" el navegador la tomaría como hora local.
+  // El backend guarda la fecha en UTC pero la devuelve sin zona horaria "2026-10-08T19:42:11"); sin la "Z" el navegador 
+  // la tomaría como hora local.
   const conZona = /(Z|[+-]\d{2}:?\d{2})$/.test(iso) ? iso : `${iso}Z`
   const fecha = new Date(conZona)
   if (Number.isNaN(fecha.getTime())) return '—'
@@ -178,10 +179,17 @@ export default function Solicitudes() {
   const [hayMas, setHayMas] = useState(false)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
-  // Se incrementa para volver a pedir la lista (botón "Reintentar"/"Actualizar").
+  // Se incrementa para volver a pedir la lista ("Reintentar", "Actualizar", aviso de nuevas).
   const [recarga, setRecarga] = useState(0)
 
   const haySesion = Boolean(accessToken)
+
+  // Aviso "hay solicitudes nuevas" (consulta cada 30 s, ver useNovedadesSolicitudes.js).
+  // `listo` = ya se tomó el punto de partida; recién ahí se carga la lista.
+  const { nuevas, listo, reiniciar } = useNovedadesSolicitudes({
+    accessToken,
+    onSesionVencida: cerrarSesion
+  })
 
   // Un 401 significa sesión vencida o revocada: se cierra la sesión y Panel.jsx redirige al login.
   function manejarError(e) {
@@ -193,7 +201,7 @@ export default function Solicitudes() {
   }
 
   useEffect(() => {
-    if (!haySesion) return
+    if (!haySesion || !listo) return
     let cancelado = false // evita pisar la lista con una respuesta vieja si cambió el filtro/página
     setCargando(true)
     setError('')
@@ -223,7 +231,7 @@ export default function Solicitudes() {
     }
     // accessToken se renueva solo cada ~85 min; no hace falta recargar la lista por eso.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [haySesion, filtro, pagina, recarga])
+  }, [haySesion, listo, filtro, pagina, recarga])
 
   async function convertir(solicitud) {
     try {
@@ -258,6 +266,22 @@ export default function Solicitudes() {
     setPagina(0)
   }
 
+  // "Actualizar" y "Reintentar": nuevo punto de partida y se vuelve a pedir la
+  // lista (mismo filtro y página).
+  async function recargar() {
+    await reiniciar()
+    setRecarga((n) => n + 1)
+  }
+
+  // Clic en el aviso de solicitudes nuevas: vuelve a "Todas" y a la página 1
+  // para que las nuevas (que nacen pendientes) siempre queden a la vista.
+  async function verNuevas() {
+    await reiniciar()
+    setFiltro('')
+    setPagina(0)
+    setRecarga((n) => n + 1)
+  }
+
   // La sesión ya la valida Panel.jsx (solo renderiza esta vista si hay usuario).
 
   const mensajeVacio =
@@ -267,19 +291,34 @@ export default function Solicitudes() {
         ? 'Todavía no hay solicitudes convertidas.'
         : 'Todavía no han llegado solicitudes desde el sitio.'
 
-  const accionActualizar = (
-    <button
-      type="button"
-      onClick={() => setRecarga((n) => n + 1)}
-      disabled={cargando}
-      className="text-sm font-medium text-ink-primary bg-surface border border-line-strong hover:border-ink-muted disabled:opacity-60 px-4 py-2.5 rounded-[10px] transition-colors"
-    >
-      Actualizar
-    </button>
+  // El aviso va en el encabezado (que no se desplaza) para que, al aparecer, la
+  // lista que el agente está leyendo no se mueva. La lista solo cambia si él hace clic.
+  const accionesEncabezado = (
+    <>
+      <span role="status" aria-live="polite" className="contents">
+        {nuevas > 0 && (
+          <button
+            type="button"
+            onClick={verNuevas}
+            className="text-sm font-semibold text-brand-dark bg-brand-tint border border-brand-primary hover:bg-brand-primary hover:text-white px-4 py-2.5 rounded-[10px] transition-colors"
+          >
+            {nuevas === 1 ? 'Hay 1 solicitud nueva' : `Hay ${nuevas} solicitudes nuevas`} · Ver
+          </button>
+        )}
+      </span>
+      <button
+        type="button"
+        onClick={recargar}
+        disabled={cargando}
+        className="text-sm font-medium text-ink-primary bg-surface border border-line-strong hover:border-ink-muted disabled:opacity-60 px-4 py-2.5 rounded-[10px] transition-colors"
+      >
+        Actualizar
+      </button>
+    </>
   )
 
   return (
-    <PaginaPanel titulo="Solicitudes de contacto" acciones={accionActualizar}>
+    <PaginaPanel titulo="Solicitudes de contacto" acciones={accionesEncabezado}>
       <div className="flex gap-2" role="group" aria-label="Filtrar por estado">
         {FILTROS.map((f) => (
           <button
@@ -304,7 +343,7 @@ export default function Solicitudes() {
             <p className="text-sm text-red-600">{error}</p>
             <button
               type="button"
-              onClick={() => setRecarga((n) => n + 1)}
+              onClick={recargar}
               className="mt-3 text-sm font-medium text-ink-link hover:underline"
             >
               Reintentar
