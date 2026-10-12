@@ -13,8 +13,7 @@ router = APIRouter(prefix="/api/solicitudes-contacto", tags=["solicitudes-contac
 @router.post("", response_model=schemas.SolicitudContactoOut, status_code=status.HTTP_201_CREATED)
 def crear_solicitud_contacto(datos: schemas.SolicitudContactoCreate, db: Session = Depends(get_db)):
     """Público — usado por el formulario 'Contrata aquí' del sitio easyoffice-web.
-    No genera código de seguimiento; solo deja la solicitud para que un agente
-    la gestione y confirme el pago manual."""
+    No genera código de seguimiento; solo deja la solicitud para que un agente la gestione y confirme el pago manual."""
     if datos.servicio_id is not None and not crud.servicio_existe(db, datos.servicio_id):
         raise HTTPException(status_code=404, detail="El servicio indicado no existe.")
     return crud.crear_solicitud(db, datos)
@@ -28,9 +27,8 @@ def listar_solicitudes_contacto(
     db: Session = Depends(get_db),
     _usuario: models.Usuario = Depends(get_usuario_actual),
 ):
-    """Uso del panel de agentes/admins (requiere login): lista las solicitudes de
-    contacto, las más recientes primero. Devuelve datos personales de clientes,
-    por eso NO puede quedar público. Filtro opcional ?estado=pendiente|convertido."""
+    """Uso del panel de agentes/admins (requiere login): lista las solicitudes de contacto, las más recientes primero. 
+    Devuelve datos personales de clientes, por eso NO puede quedar público. Filtro opcional ?estado=pendiente|convertido."""
     return crud.listar_solicitudes(db, estado=estado, limit=limit, offset=offset)
 
 
@@ -40,31 +38,28 @@ def novedades_solicitudes_contacto(
     db: Session = Depends(get_db),
     _usuario: models.Usuario = Depends(get_usuario_actual),
 ):
-    """Uso del panel de agentes/admins (requiere login): lo consulta cada ~30 s
-    para avisar "hay solicitudes nuevas" sin recargar la lista. Devuelve solo
-    números (cuántas solicitudes tienen id mayor a ?desde_id y cuál es el id más
-    alto), nunca datos de las solicitudes. Sin ?desde_id solo informa el id más
-    alto, que el panel usa como punto de partida."""
+    """Uso del panel de agentes/admins (requiere login): lo consulta cada ~30 s para avisar "hay solicitudes nuevas" sin recargar la lista. 
+    Devuelve solo números (cuántas solicitudes tienen id mayor a ?desde_id y cuál es el id más alto), nunca datos de las solicitudes. 
+    Sin ?desde_id solo informa el id más alto, que el panel usa como punto de partida."""
     return crud.contar_novedades(db, desde_id=desde_id)
 
 
 @router.post("/{id_solicitud}/convertir", response_model=schemas.TramiteOut)
 def convertir_solicitud(
     id_solicitud: int,
-    datos: schemas.ConvertirSolicitudRequest,
     db: Session = Depends(get_db),
+    usuario: models.Usuario = Depends(get_usuario_actual),
 ):
-    """Uso del panel de agentes (no del sitio público): confirma que el pago
-    manual fue recibido y convierte la solicitud en un trámite real, generando
-    el código de 8 caracteres que luego el agente entrega al cliente."""
+    """Uso del panel de agentes/admins (requiere login): confirma que el pago manual fue recibido y convierte la solicitud en un 
+    trámite real, generando el código de 8 caracteres que luego el agente entrega al cliente. El responsable del trámite es siempre 
+    quien hace la conversión (la sesión); no se acepta otro desde la petición. Reasignar a otro agente, p. ej. por vacaciones o licencia, 
+    será una acción aparte, solo para administradores."""
     solicitud = crud.obtener_solicitud(db, id_solicitud)
     if not solicitud:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada.")
 
     try:
-        tramite = crud.convertir_solicitud_a_tramite(
-            db, solicitud, datos.id_usuario_responsable
-        )
+        tramite = crud.convertir_solicitud_a_tramite(db, solicitud, usuario.id_usuario)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:

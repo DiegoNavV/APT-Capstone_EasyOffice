@@ -171,7 +171,7 @@ function TarjetaSolicitud({ solicitud, onConvertir }) {
 }
 
 export default function Solicitudes() {
-  const { accessToken, usuario, cerrarSesion } = useAuth()
+  const { accessToken, cerrarSesion } = useAuth()
 
   const [filtro, setFiltro] = useState('')
   const [pagina, setPagina] = useState(0)
@@ -237,8 +237,7 @@ export default function Solicitudes() {
     try {
       const tramite = await convertirSolicitud({
         accessToken,
-        idSolicitud: solicitud.id_solicitud,
-        idUsuarioResponsable: usuario.id_usuario
+        idSolicitud: solicitud.id_solicitud
       })
       setItems((prev) =>
         prev.map((s) =>

@@ -135,7 +135,7 @@ class TestConvertirSolicitud:
 
     def test_conversion_valida_200(self, crear_solicitud, convertir, seed, db_session):
         sol = crear_solicitud()
-        resp = convertir(sol["id_solicitud"], seed["usuario"].id_usuario)
+        resp = convertir(sol["id_solicitud"])
 
         assert resp.status_code == 200, resp.text
         data = resp.json()
@@ -161,20 +161,20 @@ class TestConvertirSolicitud:
 
     def test_conversion_crea_historial_inicial(self, crear_solicitud, convertir, seed, db_session):
         sol = crear_solicitud()
-        data = convertir(sol["id_solicitud"], seed["usuario"].id_usuario).json()
+        data = convertir(sol["id_solicitud"]).json()
         historial = db_session.query(models.HistorialEstado).filter_by(
             id_tramite=data["id_tramite"]).all()
         assert len(historial) == 1
         assert historial[0].estado == "generado"
         assert historial[0].id_usuario == seed["usuario"].id_usuario
 
-    def test_conversion_sin_usuario_responsable(self, crear_solicitud, convertir, db_session):
-        """id_usuario_responsable es opcional en el schema."""
+    def test_el_responsable_es_siempre_quien_convierte(
+            self, crear_solicitud, convertir, seed, db_session):
         sol = crear_solicitud()
         resp = convertir(sol["id_solicitud"])
         assert resp.status_code == 200
         tramite = db_session.get(models.Tramite, resp.json()["id_tramite"])
-        assert tramite.id_usuario_responsable is None
+        assert tramite.id_usuario_responsable == seed["usuario"].id_usuario
 
     def test_doble_conversion_400(self, crear_solicitud, convertir, db_session):
         sol = crear_solicitud()
@@ -193,8 +193,9 @@ class TestConvertirSolicitud:
         assert resp.json()["detail"] == "Solicitud no encontrada."
 
     @pytest.mark.parametrize("id_invalido", ["abc", "1.5"])
-    def test_id_no_entero_422(self, client, id_invalido):
-        resp = client.post(f"/api/solicitudes-contacto/{id_invalido}/convertir", json={})
+    def test_id_no_entero_422(self, client, headers_agente, id_invalido):
+        resp = client.post(
+            f"/api/solicitudes-contacto/{id_invalido}/convertir", headers=headers_agente)
         assert resp.status_code == 422
 
     def test_sin_servicio_400(self, crear_solicitud, convertir, db_session):
@@ -207,13 +208,12 @@ class TestConvertirSolicitud:
         assert db_session.query(models.Cliente).count() == 0
         assert db_session.get(models.SolicitudContacto, sol["id_solicitud"]).estado == "pendiente"
 
-    def test_convertir_sin_body_422(self, client, crear_solicitud):
-        """OBSERVACIÓN: el body es obligatorio aunque todos sus campos sean
-        opcionales. Un frontend que haga POST sin body recibe 422; hay que
-        mandar al menos {}."""
+    def test_convertir_no_necesita_body(self, client, crear_solicitud, headers_agente):
+        """Ya no se envía nada en el cuerpo: el responsable sale de la sesión."""
         sol = crear_solicitud()
-        resp = client.post(f"/api/solicitudes-contacto/{sol['id_solicitud']}/convertir")
-        assert resp.status_code == 422
+        resp = client.post(
+            f"/api/solicitudes-contacto/{sol['id_solicitud']}/convertir", headers=headers_agente)
+        assert resp.status_code == 200
 
     # ---- Clientes / RUT -------------------------------------------------
 
@@ -279,28 +279,34 @@ class TestConvertirSolicitud:
         cliente = db_session.query(models.Cliente).one()
         assert cliente.email == "viejo@x.cl"
 
-    # ---- Usuario responsable (ya corregido) -------------------------------
+    # ---- Usuario responsable ----------------------------------------------
 
-    def test_usuario_responsable_inexistente_da_400_sin_dejar_basura(
-            self, crear_solicitud, client, db_session):
-        """FIX: id_usuario_responsable ahora se valida antes de crear nada.
-        Responde 400 y no deja cliente/trámite a medio crear."""
+    @pytest.mark.parametrize("id_enviado", [99999, 0, -1])
+    def test_responsable_enviado_en_el_body_se_ignora(
+            self, crear_solicitud, client, headers_agente, seed, db_session, id_enviado):
+        """Nadie puede asignar el trámite a otro usuario (ni a uno inexistente)
+        desde la petición: el responsable es el usuario de la sesión."""
         sol = crear_solicitud()
         resp = client.post(
             f"/api/solicitudes-contacto/{sol['id_solicitud']}/convertir",
-            json={"id_usuario_responsable": 99999})
-        assert resp.status_code == 400
-        assert "no existe" in resp.json()["detail"]
-        assert db_session.query(models.Tramite).count() == 0
-        assert db_session.query(models.Cliente).count() == 0
-        assert db_session.get(models.SolicitudContacto, sol["id_solicitud"]).estado == "pendiente"
+            headers=headers_agente, json={"id_usuario_responsable": id_enviado})
+        assert resp.status_code == 200, resp.text
+        tramite = db_session.get(models.Tramite, resp.json()["id_tramite"])
+        assert tramite.id_usuario_responsable == seed["usuario"].id_usuario
 
-    def test_usuario_responsable_negativo_o_cero_da_400(self, crear_solicitud, client):
+    def test_no_se_puede_asignar_a_otro_usuario_existente(
+            self, crear_solicitud, client, headers_agente, seed, db_session):
+        otro = models.Usuario(
+            nombre="Otra Agente", email="otra@easyoffice.cl", password_hash="x",
+            id_rol=seed["usuario"].id_rol)
+        db_session.add(otro)
+        db_session.commit()
         sol = crear_solicitud()
         resp = client.post(
             f"/api/solicitudes-contacto/{sol['id_solicitud']}/convertir",
-            json={"id_usuario_responsable": 0})
-        assert resp.status_code == 400
+            headers=headers_agente, json={"id_usuario_responsable": otro.id_usuario})
+        tramite = db_session.get(models.Tramite, resp.json()["id_tramite"])
+        assert tramite.id_usuario_responsable == seed["usuario"].id_usuario != otro.id_usuario
 
     # ---- Servicio de la solicitud ----------------------------------------
 
@@ -337,6 +343,47 @@ class TestConvertirSolicitud:
 
 
 # ===========================================================================
+# 2b. Acceso a /convertir (requiere login)
+# ===========================================================================
+
+class TestConvertirAcceso:
+    """/convertir confirma un pago y genera un código: solo para agentes/admins."""
+
+    def _url(self, sol):
+        return f"/api/solicitudes-contacto/{sol['id_solicitud']}/convertir"
+
+    def test_sin_token_401_y_no_crea_nada(self, client, crear_solicitud, db_session):
+        sol = crear_solicitud()
+        assert client.post(self._url(sol)).status_code == 401
+        assert db_session.query(models.Tramite).count() == 0
+        assert db_session.query(models.Cliente).count() == 0
+        assert db_session.get(
+            models.SolicitudContacto, sol["id_solicitud"]).estado == "pendiente"
+
+    def test_sin_token_aunque_mande_un_body_401(self, client, crear_solicitud):
+        sol = crear_solicitud()
+        resp = client.post(self._url(sol), json={"id_usuario_responsable": 1})
+        assert resp.status_code == 401
+
+    def test_token_invalido_401(self, client, crear_solicitud):
+        sol = crear_solicitud()
+        resp = client.post(self._url(sol), headers={"Authorization": "Bearer basura"})
+        assert resp.status_code == 401
+
+    def test_cuenta_desactivada_401(
+            self, client, crear_solicitud, headers_agente, seed, db_session):
+        sol = crear_solicitud()
+        db_session.get(models.Usuario, seed["usuario"].id_usuario).activo = False
+        db_session.commit()
+        assert client.post(self._url(sol), headers=headers_agente).status_code == 401
+        assert db_session.query(models.Tramite).count() == 0
+
+    def test_sin_sesion_no_revela_si_la_solicitud_existe(self, client):
+        """Sin login siempre 401: no se distingue una solicitud real de una inventada."""
+        assert client.post("/api/solicitudes-contacto/999999/convertir").status_code == 401
+
+
+# ===========================================================================
 # 3. Generación de código (unitario sobre crud)
 # ===========================================================================
 
@@ -369,14 +416,15 @@ class TestGeneracionCodigo:
             crud._generar_codigo_unico(db_session)
 
     def test_agotar_reintentos_en_endpoint_da_500(
-            self, crear_solicitud, convertir, client_500, monkeypatch, db_session):
+            self, crear_solicitud, convertir, client_500, headers_agente, monkeypatch, db_session):
         """El router captura RuntimeError y responde 500 con detalle (en vez de
         un 500 genérico sin mensaje). Además el cliente ya fue flusheado →
         verificamos que no quede huérfano (no hay commit)."""
         existente = convertir(crear_solicitud(rut="1-1")["id_solicitud"]).json()["codigo_seguimiento"]
         sol = crear_solicitud(rut="2-2")
         monkeypatch.setattr(crud, "_generar_codigo", lambda: existente)
-        resp = client_500.post(f"/api/solicitudes-contacto/{sol['id_solicitud']}/convertir", json={})
+        resp = client_500.post(
+            f"/api/solicitudes-contacto/{sol['id_solicitud']}/convertir", headers=headers_agente)
         assert resp.status_code == 500
         assert db_session.query(models.Cliente).filter_by(rut="2-2").count() == 0
 

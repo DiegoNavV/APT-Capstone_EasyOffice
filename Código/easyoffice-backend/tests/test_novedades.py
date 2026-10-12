@@ -71,21 +71,21 @@ class TestConteo:
         crear_solicitud(nombre="B", rut="11111111-1")
         assert client.get(URL, headers=auth, params={"desde_id": 0}).json()["nuevas"] == 2
 
-    def test_cuenta_sobre_toda_la_tabla_incluidas_las_convertidas(self, client, auth, crear_solicitud, convertir, seed):
+    def test_cuenta_sobre_toda_la_tabla_incluidas_las_convertidas(self, client, auth, crear_solicitud, convertir):
         a = crear_solicitud()
         base = a["id_solicitud"]
         b = crear_solicitud(nombre="B", rut="11111111-1")
-        assert convertir(b["id_solicitud"], seed["usuario"].id_usuario).status_code == 200
+        assert convertir(b["id_solicitud"]).status_code == 200
         # una pendiente y una convertida posteriores al punto de partida: ambas cuentan
         assert client.get(URL, headers=auth, params={"desde_id": base}).json()["nuevas"] == 1
         c = crear_solicitud(nombre="C", rut="22222222-2")
         resp = client.get(URL, headers=auth, params={"desde_id": base})
         assert resp.json() == {"nuevas": 2, "ultimo_id": c["id_solicitud"]}
 
-    def test_convertir_no_cambia_el_conteo(self, client, auth, crear_solicitud, convertir, seed):
+    def test_convertir_no_cambia_el_conteo(self, client, auth, crear_solicitud, convertir):
         a = crear_solicitud()
         antes = client.get(URL, headers=auth, params={"desde_id": 0}).json()
-        convertir(a["id_solicitud"], seed["usuario"].id_usuario)
+        convertir(a["id_solicitud"])
         assert client.get(URL, headers=auth, params={"desde_id": 0}).json() == antes
 
 
@@ -104,11 +104,9 @@ class TestValidacion:
 
 class TestConvivenciaConElResto:
 
-    def test_la_ruta_no_choca_con_el_listado_ni_con_convertir(self, client, auth, crear_solicitud, seed):
+    def test_la_ruta_no_choca_con_el_listado_ni_con_convertir(self, client, auth, crear_solicitud):
         sol = crear_solicitud()
         assert client.get("/api/solicitudes-contacto", headers=auth).status_code == 200
         resp = client.post(
-            f"/api/solicitudes-contacto/{sol['id_solicitud']}/convertir",
-            json={"id_usuario_responsable": seed["usuario"].id_usuario},
-        )
+            f"/api/solicitudes-contacto/{sol['id_solicitud']}/convertir", headers=auth)
         assert resp.status_code == 200
