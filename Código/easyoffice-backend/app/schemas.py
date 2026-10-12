@@ -95,6 +95,14 @@ class SolicitudListadoOut(BaseModel):
     codigo_seguimiento: Optional[str]
     fecha_creacion: datetime
 
+
+# ---------- Aviso de solicitudes nuevas (consulta periódica del panel) ----------
+
+class NovedadesSolicitudesOut(BaseModel):
+    # Solo números, nunca datos de las solicitudes.
+    nuevas: int
+    ultimo_id: int
+
 # ---------- Conversión solicitud -> trámite (acción del agente) ----------
 
 class ConvertirSolicitudRequest(BaseModel):

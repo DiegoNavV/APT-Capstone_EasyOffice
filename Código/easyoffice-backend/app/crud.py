@@ -4,6 +4,7 @@
 import random
 import string
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -89,6 +90,24 @@ def listar_solicitudes(
         )
         for s in solicitudes
     ]
+
+
+def contar_novedades(db: Session, desde_id: int | None = None) -> schemas.NovedadesSolicitudesOut:
+    """Para el aviso "N solicitudes nuevas" del panel (consulta periódica).
+    No devuelve datos de las solicitudes, solo números: el id más alto que existe
+    y cuántas hay con id mayor a `desde_id`. Sin `desde_id` (primera consulta
+    del panel) solo se informa el id más alto, que el panel guarda como punto
+    de partida. Cuenta sobre toda la tabla, sin depender del filtro ni de la
+    página que el agente esté viendo."""
+    ultimo_id = db.query(func.max(models.SolicitudContacto.id_solicitud)).scalar() or 0
+    nuevas = 0
+    if desde_id is not None:
+        nuevas = (
+            db.query(func.count(models.SolicitudContacto.id_solicitud))
+            .filter(models.SolicitudContacto.id_solicitud > desde_id)
+            .scalar()
+        )
+    return schemas.NovedadesSolicitudesOut(nuevas=nuevas, ultimo_id=ultimo_id)
 
 
 def _generar_codigo_unico(db: Session) -> str:

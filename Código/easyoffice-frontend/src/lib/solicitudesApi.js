@@ -1,10 +1,9 @@
 // Llamadas del panel al backend del módulo solicitud_contacto -> trámite.
-// Reutiliza API_URL y ApiError de api.js (login), pero va en un archivo aparte
-// para no mezclar los endpoints del login con los de las solicitudes.
+// Reutiliza API_URL y ApiError de api.js (login), pero va en un archivo aparte para no mezclar los endpoints del login con los de las solicitudes.
 import { API_URL, ApiError } from './api.js'
 
-// FastAPI responde `detail` como texto en errores de negocio (404, 400) y como
-// lista de objetos en errores de validación (422); en ese caso no sirve como mensaje.
+// FastAPI responde `detail` como texto en errores de negocio (404, 400) y como lista de objetos en errores de validación (422); 
+// en ese caso no sirve como mensaje.
 function mensajeDeError(data) {
   if (typeof data?.detail === 'string') return data.detail
   return 'Ocurrió un error inesperado'
@@ -43,4 +42,13 @@ export function convertirSolicitud({ accessToken, idSolicitud, idUsuarioResponsa
     method: 'POST',
     body: { id_usuario_responsable: idUsuarioResponsable }
   })
+}
+
+// Aviso "hay solicitudes nuevas": devuelve solo números ({ nuevas, ultimo_id }),
+// nunca datos de las solicitudes. Sin desdeId solo informa el id más alto.
+export function obtenerNovedades({ accessToken, desdeId }) {
+  const params = new URLSearchParams()
+  if (desdeId !== null && desdeId !== undefined) params.set('desde_id', String(desdeId))
+  const consulta = params.toString()
+  return pedir(`/api/solicitudes-contacto/novedades${consulta ? `?${consulta}` : ''}`, { accessToken })
 }

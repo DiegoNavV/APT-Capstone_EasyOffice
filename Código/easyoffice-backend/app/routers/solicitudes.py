@@ -34,6 +34,20 @@ def listar_solicitudes_contacto(
     return crud.listar_solicitudes(db, estado=estado, limit=limit, offset=offset)
 
 
+@router.get("/novedades", response_model=schemas.NovedadesSolicitudesOut)
+def novedades_solicitudes_contacto(
+    desde_id: Optional[int] = Query(default=None, ge=0),
+    db: Session = Depends(get_db),
+    _usuario: models.Usuario = Depends(get_usuario_actual),
+):
+    """Uso del panel de agentes/admins (requiere login): lo consulta cada ~30 s
+    para avisar "hay solicitudes nuevas" sin recargar la lista. Devuelve solo
+    números (cuántas solicitudes tienen id mayor a ?desde_id y cuál es el id más
+    alto), nunca datos de las solicitudes. Sin ?desde_id solo informa el id más
+    alto, que el panel usa como punto de partida."""
+    return crud.contar_novedades(db, desde_id=desde_id)
+
+
 @router.post("/{id_solicitud}/convertir", response_model=schemas.TramiteOut)
 def convertir_solicitud(
     id_solicitud: int,
