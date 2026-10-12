@@ -9,15 +9,14 @@ import {
   validarNombre
 } from '../utils/validaciones.js'
 
-// Servicios priorizados del MVP. El código de seguimiento NO se genera aquí:
-// este formulario solo deja la solicitud registrada para que Easy Office
-// contacte al cliente, coordine la gestión y el pago manual. El código lo
-// genera después un administrador/agente desde el panel interno, una vez
-// confirmado el pago, y se lo entrega al cliente por fuera del sitio.
+// Servicios priorizados del MVP. El código de seguimiento NO se genera aquí: este formulario solo deja la solicitud registrada para 
+// que Easy Office contacte al cliente, coordine la gestión y el pago manual. El código lo genera después un administrador/agente 
+// desde el panel interno, una vez confirmado el pago, y se lo entrega al cliente por fuera del sitio.
+// Los id deben coincidir con servicio_contratado en la base de datos (backend/db/init/02_seed.sql); un id que no exista hace que 
+// el backend rechace la solicitud con 404.
 const SERVICIOS = [
   { id: 1, nombre: 'Contrato de servicio' },
-  { id: 2, nombre: 'Autorización de domicilio tributario' },
-  { id: 0, nombre: 'Otro / no estoy seguro' }
+  { id: 2, nombre: 'Autorización de domicilio tributario' }
 ]
 
 const MENSAJE_MAX = 500
