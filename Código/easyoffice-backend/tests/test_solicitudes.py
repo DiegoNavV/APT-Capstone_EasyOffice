@@ -7,7 +7,7 @@ import pytest
 
 from app import crud, models
 
-CODIGO_RE = re.compile(r"^[A-Z0-9]{8}$")
+CODIGO_RE = re.compile(r"^[2-9A-HJKMNP-Z]{8}$")  # sin 0/O/1/I/L
 
 
 # ===========================================================================
@@ -357,14 +357,14 @@ class TestGeneracionCodigo:
         t1 = convertir(crear_solicitud(rut="1-1")["id_solicitud"]).json()
         existente = t1["codigo_seguimiento"]
 
-        secuencia = iter([list(existente), list("NUEVO123")])
-        monkeypatch.setattr(crud.random, "choices", lambda *a, **k: next(secuencia))
+        secuencia = iter([existente, "NUEVO234"])
+        monkeypatch.setattr(crud, "_generar_codigo", lambda: next(secuencia))
 
-        assert crud._generar_codigo_unico(db_session) == "NUEVO123"
+        assert crud._generar_codigo_unico(db_session) == "NUEVO234"
 
     def test_agota_reintentos_lanza_runtime_error(self, crear_solicitud, convertir, db_session, monkeypatch):
         existente = convertir(crear_solicitud(rut="1-1")["id_solicitud"]).json()["codigo_seguimiento"]
-        monkeypatch.setattr(crud.random, "choices", lambda *a, **k: list(existente))
+        monkeypatch.setattr(crud, "_generar_codigo", lambda: existente)
         with pytest.raises(RuntimeError):
             crud._generar_codigo_unico(db_session)
 
@@ -375,7 +375,7 @@ class TestGeneracionCodigo:
         verificamos que no quede huérfano (no hay commit)."""
         existente = convertir(crear_solicitud(rut="1-1")["id_solicitud"]).json()["codigo_seguimiento"]
         sol = crear_solicitud(rut="2-2")
-        monkeypatch.setattr(crud.random, "choices", lambda *a, **k: list(existente))
+        monkeypatch.setattr(crud, "_generar_codigo", lambda: existente)
         resp = client_500.post(f"/api/solicitudes-contacto/{sol['id_solicitud']}/convertir", json={})
         assert resp.status_code == 500
         assert db_session.query(models.Cliente).filter_by(rut="2-2").count() == 0
@@ -395,10 +395,22 @@ class TestGeneracionCodigo:
             db_session.flush()
         db_session.rollback()
 
-    def test_codigo_usa_random_no_criptografico(self):
-        """OBSERVACIÓN de seguridad (pendiente, no bloqueante): el código es la
-        ÚNICA credencial del cliente para ver su trámite, y se genera con
-        `random` (predecible), no con `secrets`."""
+    def test_codigo_usa_secrets_no_random(self):
+        """El código es la ÚNICA credencial del cliente para ver su trámite:
+        debe salir de un generador criptográfico (`secrets`), no de `random`."""
         import inspect
-        fuente = inspect.getsource(crud._generar_codigo_unico)
-        assert "random.choices" in fuente and "secrets" not in fuente
+        fuente = inspect.getsource(crud._generar_codigo)
+        assert "secrets.choice" in fuente and "random" not in fuente
+
+    def test_alfabeto_sin_caracteres_ambiguos(self):
+        assert len(crud.ALFABETO_CODIGO) == 31
+        assert len(set(crud.ALFABETO_CODIGO)) == 31
+        for c in "01OIL":
+            assert c not in crud.ALFABETO_CODIGO
+
+    def test_codigos_generados_solo_usan_el_alfabeto(self):
+        permitidos = set(crud.ALFABETO_CODIGO)
+        for _ in range(2000):
+            codigo = crud._generar_codigo()
+            assert len(codigo) == crud.LARGO_CODIGO == 8
+            assert set(codigo) <= permitidos

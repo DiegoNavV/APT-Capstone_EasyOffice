@@ -1,8 +1,7 @@
 """Lógica de negocio del módulo: crear solicitud, convertirla a trámite
 (generando el código de 8 caracteres) y consultar un trámite por código.
 """
-import random
-import string
+import secrets
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -110,16 +109,25 @@ def contar_novedades(db: Session, desde_id: int | None = None) -> schemas.Noveda
     return schemas.NovedadesSolicitudesOut(nuevas=nuevas, ultimo_id=ultimo_id)
 
 
+# Alfabeto del código de seguimiento: 31 caracteres, sin 0/O/1/I/L para que no se confundan al dictarlos por teléfono o 
+# copiarlos desde un mensaje.
+ALFABETO_CODIGO = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+LARGO_CODIGO = 8
+
+
+def _generar_codigo() -> str:
+    """Un código aleatorio (sin verificar unicidad). Usa `secrets` porque el
+    código es la única credencial del cliente para ver su trámite."""
+    return "".join(secrets.choice(ALFABETO_CODIGO) for _ in range(LARGO_CODIGO))
+
 def _generar_codigo_unico(db: Session) -> str:
-    alfabeto = string.ascii_uppercase + string.digits
     for _ in range(20):
-        codigo = "".join(random.choices(alfabeto, k=8))
+        codigo = _generar_codigo()
         existe = db.query(models.Tramite).filter_by(codigo_seguimiento=codigo).first()
         if not existe:
             return codigo
-    # Extremadamente improbable con 36^8 combinaciones, pero no lo dejamos colgado.
+    # Extremadamente improbable con 31^8 combinaciones, pero no lo dejamos colgado.
     raise RuntimeError("No se pudo generar un código de seguimiento único. Intenta nuevamente.")
-
 
 def convertir_solicitud_a_tramite(
     db: Session,
