@@ -119,9 +119,11 @@ class Tramite(Base):
     estado_actual = Column(String(30), nullable=False, default="generado")
     ruta_documento_generado = Column(String(255))
     fecha_creacion = Column(TIMESTAMP, server_default=func.now())
+    fecha_actualizacion = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
     cliente = relationship("Cliente")
     servicio = relationship("ServicioContratado")
+    usuario_responsable = relationship("Usuario")
 
 
 class HistorialEstado(Base):

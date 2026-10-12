@@ -9,7 +9,7 @@ function mensajeDeError(data) {
   return 'Ocurrió un error inesperado'
 }
 
-async function pedir(path, { accessToken, method = 'GET', body } = {}) {
+export async function pedir(path, { accessToken, method = 'GET', body } = {}) {
   const res = await fetch(`${API_URL}${path}`, {
     method,
     headers: {
