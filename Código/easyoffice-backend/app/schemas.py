@@ -126,3 +126,54 @@ class SeguimientoOut(BaseModel):
     nombre_servicio: str
     estado_actual: str
     documento_disponible: bool
+
+
+# ---------- Listado de trámites del panel (requiere login) ----------
+
+class ClienteListadoOut(BaseModel):
+    """Cliente tal como se muestra en el listado. Hoy son los datos de contacto
+    de quien pidió el trámite; cuando el cliente complete los datos de su
+    empresa, aquí saldrán la razón social y el RUT de la empresa."""
+    nombre: str
+    rut: Optional[str] = None
+    datos_pendientes: bool  # True mientras no existan los datos de empresa
+
+
+class TramiteListadoOut(BaseModel):
+    id_tramite: int
+    codigo_seguimiento: str
+    cliente: ClienteListadoOut
+    id_servicio: int
+    nombre_servicio: str
+    estado_actual: str
+    id_usuario_responsable: Optional[int] = None
+    nombre_agente: Optional[str] = None
+    fecha_actualizacion: Optional[datetime] = None
+
+
+class TramitesPaginaOut(BaseModel):
+    items: list[TramiteListadoOut]
+    total: int  # total que cumple los filtros (sin paginar)
+
+
+class TramitesKpisOut(BaseModel):
+    pendientes_datos: int  # el cliente aún no completa sus datos
+    en_proceso: int        # firma o revisión en curso
+    firmados_24h: int      # pasaron a "firmado" en las últimas 24 horas
+    entregados: int
+
+
+class OpcionServicioOut(BaseModel):
+    id_servicio: int
+    nombre: str
+
+
+class OpcionAgenteOut(BaseModel):
+    id_usuario: int
+    nombre: str
+
+
+class TramitesResumenOut(BaseModel):
+    kpis: TramitesKpisOut
+    servicios: list[OpcionServicioOut]
+    agentes: list[OpcionAgenteOut]
