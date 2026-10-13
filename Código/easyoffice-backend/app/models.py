@@ -4,7 +4,7 @@ Modelos SQLAlchemy. Deben coincidir con db/init/01_schema.sql.
   - Login del panel (Épica A): rol, usuario, refresh_token
   - Formulario de contacto -> solicitud -> trámite:
     servicio_contratado, solicitud_contacto, cliente, tramite, historial_estado
-  - Datos que el cliente entrega con su código: datos_empresa_tramite
+  - Datos que el cliente entrega con su código: empresa, datos_empresa_tramite
 """
 from sqlalchemy import (
     JSON, CheckConstraint, Column, Integer, String, Text, Boolean, TIMESTAMP,
@@ -15,14 +15,12 @@ from sqlalchemy.orm import relationship
 
 from app.database import Base
 
-
 class Rol(Base):
     __tablename__ = "rol"
 
     id_rol = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(50), nullable=False, unique=True)  # "administrador" | "agente"
     descripcion = Column(Text)
-
 
 class Usuario(Base):
     """Cuentas del panel interno (administradores y agentes). Los clientes de
@@ -50,7 +48,6 @@ class Usuario(Base):
     def rol_nombre(self) -> str:
         return self.rol.nombre
 
-
 class RefreshToken(Base):
     """Una fila por sesión iniciada. Solo se guarda el hash del token.
 
@@ -69,7 +66,6 @@ class RefreshToken(Base):
     revocado = Column(Boolean, nullable=False, default=False)
     reemplazado_por_id = Column(Integer, ForeignKey("refresh_token.id_refresh_token"))
 
-
 class Cliente(Base):
     __tablename__ = "cliente"
 
@@ -80,7 +76,6 @@ class Cliente(Base):
     telefono = Column(String(20))
     fecha_creacion = Column(TIMESTAMP, server_default=func.now())
 
-
 class ServicioContratado(Base):
     __tablename__ = "servicio_contratado"
 
@@ -89,7 +84,6 @@ class ServicioContratado(Base):
     descripcion = Column(Text)
     requiere_revision_humana = Column(Boolean, nullable=False, default=False)
     activo = Column(Boolean, nullable=False, default=True)
-
 
 class SolicitudContacto(Base):
     __tablename__ = "solicitud_contacto"
@@ -109,6 +103,27 @@ class SolicitudContacto(Base):
 
     servicio = relationship("ServicioContratado")
 
+class Empresa(Base):
+    """Empresa cliente. Sus datos se guardan UNA sola vez y se reutilizan entre
+    trámites. `razon_social` y `rut_empresa` son columnas propias porque el panel
+    las muestra y las busca; el resto de los campos varía según el servicio y va
+    en `datos`.
+
+    El cliente solo puede COMPLETAR campos que faltan, nunca sobrescribir los
+    existentes; los cambios los hace un agente. Para modificar `datos` hay que
+    asignar un diccionario nuevo (SQLAlchemy no detecta cambios dentro del JSON)."""
+
+    __tablename__ = "empresa"
+
+    id_empresa = Column(Integer, primary_key=True, index=True)
+    rut_empresa = Column(String(15), nullable=False, unique=True)
+    razon_social = Column(String(200), nullable=False)
+    # JSONB en PostgreSQL; JSON genérico en SQLite (tests).
+    datos = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=dict)
+    fecha_creacion = Column(TIMESTAMP, nullable=False, server_default=func.now())
+    fecha_actualizacion = Column(TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    tramites = relationship("Tramite", back_populates="empresa")
 
 class Tramite(Base):
     __tablename__ = "tramite"
@@ -118,6 +133,7 @@ class Tramite(Base):
     id_servicio = Column(Integer, ForeignKey("servicio_contratado.id_servicio"), nullable=False)
     id_usuario_responsable = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=True)
     id_solicitud_origen = Column(Integer, ForeignKey("solicitud_contacto.id_solicitud"), nullable=True)
+    id_empresa = Column(Integer, ForeignKey("empresa.id_empresa"), nullable=True)
     codigo_seguimiento = Column(String(8), nullable=False, unique=True, index=True)
     estado_actual = Column(String(30), nullable=False, default="generado")
     ruta_documento_generado = Column(String(255))
@@ -127,30 +143,22 @@ class Tramite(Base):
     cliente = relationship("Cliente")
     servicio = relationship("ServicioContratado")
     usuario_responsable = relationship("Usuario")
+    empresa = relationship("Empresa", back_populates="tramites")
     datos_empresa = relationship("DatosEmpresaTramite", back_populates="tramite", uselist=False)
 
 
 class DatosEmpresaTramite(Base):
-    """Datos de la empresa que el cliente entrega UNA sola vez con su código.
+    """Registro del envío ÚNICO de datos que hace el cliente con su código.
 
-    El solicitante (quien llenó el formulario público) vive en
-    solicitud_contacto/cliente; aquí va la empresa. `razon_social` y
-    `rut_empresa` son columnas propias porque la lista del panel las muestra y
-    las busca; el resto de los campos varía según el servicio y se guarda en
-    `datos`, con los nombres de columna de los Excel de Easy Office.
-
-    La clave única en id_tramite garantiza el envío único a nivel de base de
-    datos: un segundo intento falla aunque se salten las validaciones."""
+    La clave única en id_tramite garantiza el "solo una vez" a nivel de base de
+    datos: un segundo intento falla aunque se salten las validaciones. Los datos
+    de la empresa en sí viven en la tabla `empresa`."""
 
     __tablename__ = "datos_empresa_tramite"
     __table_args__ = (CheckConstraint("consentimiento_aceptado", name="ck_datos_empresa_consentimiento"),)
 
     id_datos = Column(Integer, primary_key=True, index=True)
     id_tramite = Column(Integer, ForeignKey("tramite.id_tramite"), nullable=False, unique=True)
-    razon_social = Column(String(200), nullable=False)
-    rut_empresa = Column(String(15), nullable=False, index=True)
-    # JSONB en PostgreSQL; JSON genérico en SQLite (tests).
-    datos = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=dict)
     solicitante_es_representante = Column(Boolean, nullable=False)
     consentimiento_aceptado = Column(Boolean, nullable=False)
     fecha_envio = Column(TIMESTAMP, nullable=False, server_default=func.now())

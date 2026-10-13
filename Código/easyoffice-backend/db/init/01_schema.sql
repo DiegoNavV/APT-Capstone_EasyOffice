@@ -109,6 +109,23 @@ CREATE TABLE solicitud_contacto (
 );
 
 -- =========================
+-- TABLA: empresa
+-- (datos de cada empresa cliente, guardados UNA sola vez y reutilizados
+--  entre tramites. razon_social y rut_empresa son columnas propias porque el
+--  panel las muestra y las busca; el resto de los campos va en "datos", que
+--  varia segun el servicio. El cliente solo puede COMPLETAR campos que faltan,
+--  nunca sobrescribir; los cambios los hace un agente)
+-- =========================
+CREATE TABLE empresa (
+    id_empresa          SERIAL PRIMARY KEY,
+    rut_empresa         VARCHAR(15) NOT NULL UNIQUE,
+    razon_social        VARCHAR(200) NOT NULL,
+    datos               JSONB NOT NULL DEFAULT '{}'::jsonb,
+    fecha_creacion      TIMESTAMP NOT NULL DEFAULT now(),
+    fecha_actualizacion TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- =========================
 -- TABLA: tramite
 -- (se crea únicamente cuando un agente confirma el pago y convierte
 --  una solicitud_contacto; nunca se crea directo desde el sitio público)
@@ -119,6 +136,7 @@ CREATE TABLE tramite (
     id_servicio             INTEGER NOT NULL REFERENCES servicio_contratado(id_servicio),
     id_usuario_responsable  INTEGER REFERENCES usuario(id_usuario),
     id_solicitud_origen     INTEGER REFERENCES solicitud_contacto(id_solicitud),
+    id_empresa              INTEGER REFERENCES empresa(id_empresa),
     codigo_seguimiento      VARCHAR(8) NOT NULL UNIQUE,
     estado_actual           VARCHAR(30) NOT NULL DEFAULT 'generado',
     ruta_documento_generado VARCHAR(255),
@@ -152,15 +170,16 @@ CREATE INDEX idx_historial_id_tramite ON historial_estado(id_tramite);
 --  porque la lista del panel las muestra y las busca; el resto de los campos varía según el servicio y se guarda en "datos" 
 --  con los nombres de columna de los Excel de Easy Office)
 -- =========================
+-- =========================
+-- TABLA: datos_empresa_tramite
+-- (registro del envio UNICO de datos que hace el cliente con su codigo.
+--  La clave unica en id_tramite garantiza el "solo una vez" a nivel de base
+--  de datos. Los datos de la empresa viven en la tabla empresa)
+-- =========================
 CREATE TABLE datos_empresa_tramite (
     id_datos                     SERIAL PRIMARY KEY,
     id_tramite                   INTEGER NOT NULL UNIQUE REFERENCES tramite(id_tramite),
-    razon_social                 VARCHAR(200) NOT NULL,
-    rut_empresa                  VARCHAR(15) NOT NULL,
-    datos                        JSONB NOT NULL DEFAULT '{}'::jsonb,
     solicitante_es_representante BOOLEAN NOT NULL,
     consentimiento_aceptado      BOOLEAN NOT NULL CHECK (consentimiento_aceptado),
     fecha_envio                  TIMESTAMP NOT NULL DEFAULT now()
 );
-
-CREATE INDEX idx_datos_empresa_rut ON datos_empresa_tramite(rut_empresa);
