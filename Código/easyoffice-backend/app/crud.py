@@ -135,10 +135,14 @@ def convertir_solicitud_a_tramite(
     db: Session,
     solicitud: models.SolicitudContacto,
     id_usuario_responsable: int,
+    empresa: models.Empresa | None = None,
 ) -> models.Tramite:
-    """Confirma el pago manual de una solicitud y la convierte en un trámite real, generando su código de seguimiento. 
-    Acción exclusiva de un agente/admin: el responsable es siempre quien la ejecuta (lo valida get_usuario_actual en el router, por eso 
-    aquí no se vuelve a comprobar que exista)."""
+    """Confirma el pago manual de una solicitud y la convierte en un trámite real, generando su código de seguimiento. Acción exclusiva 
+    de un agente/admin: el responsable es siempre quien la ejecuta (lo valida get_usuario_actual en el router, por eso aquí no se 
+    vuelve a comprobar que exista).
+
+    `empresa` es opcional: si el agente la indica, el trámite queda vinculado a ella y reutilizará sus datos ya guardados. El router 
+    es quien comprueba que exista; aquí solo se vincula."""
 
     if solicitud.estado == "convertido":
         raise ValueError("Esta solicitud ya fue convertida en un trámite.")
@@ -166,16 +170,20 @@ def convertir_solicitud_a_tramite(
         id_servicio=solicitud.id_servicio,
         id_usuario_responsable=id_usuario_responsable,
         id_solicitud_origen=solicitud.id_solicitud,
+        id_empresa=empresa.id_empresa if empresa else None,
         codigo_seguimiento=_generar_codigo_unico(db),
         estado_actual="generado",
     )
     db.add(tramite)
     db.flush()
-
+    
+    comentario = "Trámite generado al confirmar el pago de la solicitud de contacto."
+    if empresa:
+        comentario += f" Vinculado a la empresa {empresa.razon_social} ({empresa.rut_empresa})."
     db.add(models.HistorialEstado(
         id_tramite=tramite.id_tramite,
         estado="generado",
-        comentario="Trámite generado al confirmar el pago de la solicitud de contacto.",
+        comentario=comentario,
         id_usuario=id_usuario_responsable,
     ))
 
@@ -185,6 +193,53 @@ def convertir_solicitud_a_tramite(
     db.commit()
     db.refresh(tramite)
     return tramite
+
+
+# ---------------------------------------------------------------------------
+# Empresas: búsqueda y sugerencias para vincular al convertir (solo agentes)
+# ---------------------------------------------------------------------------
+
+def obtener_empresa(db: Session, id_empresa: int) -> models.Empresa | None:
+    return db.get(models.Empresa, id_empresa)
+
+
+def buscar_empresas(db: Session, texto: str, limite: int = 10) -> list[models.Empresa]:
+    """Coincidencia parcial por razón social o RUT de la empresa. Pensada para
+    el buscador del agente: devuelve pocas filas y sin el JSON `datos`
+    (el schema de salida lo excluye)."""
+    texto = texto.strip()
+    if not texto:
+        return []
+    patron = f"%{_escapar_like(texto)}%"
+    patron_rut = f"%{_escapar_like(normalizar_rut(texto) or texto)}%"
+    return (
+        db.query(models.Empresa)
+        .filter(or_(
+            models.Empresa.razon_social.ilike(patron, escape="\\"),
+            models.Empresa.rut_empresa.ilike(patron_rut, escape="\\"),
+        ))
+        .order_by(models.Empresa.razon_social, models.Empresa.id_empresa)
+        .limit(limite)
+        .all()
+    )
+
+
+def empresas_sugeridas(db: Session, solicitud: models.SolicitudContacto) -> list[models.Empresa]:
+    """Empresas ya vinculadas a trámites anteriores del MISMO solicitante (se identifica por RUT, igual que al convertir). Sin RUT 
+    o sin historial no hay sugerencias: el agente usa el buscador o deja el trámite sin empresa."""
+    if not solicitud.rut:
+        return []
+    cliente = db.query(models.Cliente).filter_by(rut=solicitud.rut).first()
+    if not cliente:
+        return []
+    return (
+        db.query(models.Empresa)
+        .join(models.Tramite, models.Tramite.id_empresa == models.Empresa.id_empresa)
+        .filter(models.Tramite.id_cliente == cliente.id_cliente)
+        .distinct()
+        .order_by(models.Empresa.razon_social, models.Empresa.id_empresa)
+        .all()
+    )
 
 
 def obtener_tramite_por_codigo(db: Session, codigo: str) -> models.Tramite | None:

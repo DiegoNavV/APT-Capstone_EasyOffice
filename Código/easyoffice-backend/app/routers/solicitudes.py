@@ -44,22 +44,46 @@ def novedades_solicitudes_contacto(
     return crud.contar_novedades(db, desde_id=desde_id)
 
 
+@router.get("/{id_solicitud}/empresas-sugeridas", response_model=list[schemas.EmpresaOpcionOut])
+def empresas_sugeridas_de_solicitud(
+    id_solicitud: int,
+    db: Session = Depends(get_db),
+    _usuario: models.Usuario = Depends(get_usuario_actual),
+):
+    """Uso del panel de agentes/admins (requiere login): empresas que el mismo
+    solicitante ya tiene vinculadas en trámites anteriores, para ofrecerlas al
+    convertir. Lista vacía si es un solicitante nuevo."""
+    solicitud = crud.obtener_solicitud(db, id_solicitud)
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada.")
+    return crud.empresas_sugeridas(db, solicitud)
+
+
 @router.post("/{id_solicitud}/convertir", response_model=schemas.TramiteOut)
 def convertir_solicitud(
     id_solicitud: int,
+    datos: Optional[schemas.ConvertirSolicitudIn] = None,
     db: Session = Depends(get_db),
     usuario: models.Usuario = Depends(get_usuario_actual),
 ):
-    """Uso del panel de agentes/admins (requiere login): confirma que el pago manual fue recibido y convierte la solicitud en un 
-    trámite real, generando el código de 8 caracteres que luego el agente entrega al cliente. El responsable del trámite es siempre 
-    quien hace la conversión (la sesión); no se acepta otro desde la petición. Reasignar a otro agente, p. ej. por vacaciones o licencia, 
-    será una acción aparte, solo para administradores."""
+    """Uso del panel de agentes/admins (requiere login): confirma que el pago manual fue recibido y convierte la solicitud en 
+    un trámite real, generando el código de 8 caracteres que luego el agente entrega al cliente. El responsable del trámite es 
+    siempre quien hace la conversión (la sesión); no se acepta otro desde la petición. Reasignar a otro agente, p. ej. por
+    vacaciones o licencia, será una acción aparte, solo para administradores.
+
+    Cuerpo opcional {"id_empresa": N}: vincula el trámite a una empresa que ya existe. Sin cuerpo, el trámite queda sin empresa vinculada."""
     solicitud = crud.obtener_solicitud(db, id_solicitud)
     if not solicitud:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada.")
 
+    empresa = None
+    if datos and datos.id_empresa is not None:
+        empresa = crud.obtener_empresa(db, datos.id_empresa)
+        if not empresa:
+            raise HTTPException(status_code=404, detail="La empresa indicada no existe.")
+
     try:
-        tramite = crud.convertir_solicitud_a_tramite(db, solicitud, usuario.id_usuario)
+        tramite = crud.convertir_solicitud_a_tramite(db, solicitud, usuario.id_usuario, empresa)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:

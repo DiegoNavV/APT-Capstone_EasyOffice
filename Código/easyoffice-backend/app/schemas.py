@@ -105,6 +105,22 @@ class NovedadesSolicitudesOut(BaseModel):
 
 # ---------- Conversión solicitud -> trámite (acción del agente) ----------
 
+class ConvertirSolicitudIn(BaseModel):
+    """Cuerpo OPCIONAL de la conversión. Sin cuerpo (o con id_empresa nulo) el trámite queda sin empresa vinculada, como hasta ahora; 
+    el vínculo siempre lo decide el agente, nunca el cliente."""
+    id_empresa: Optional[int] = Field(default=None, ge=1)
+
+
+class EmpresaOpcionOut(BaseModel):
+    """Lo mínimo para que el agente identifique una empresa en el panel. A propósito NO incluye `datos` (representante, domicilio, etc.)."""
+    id_empresa: int
+    rut_empresa: str
+    razon_social: str
+
+    class Config:
+        from_attributes = True
+
+
 class TramiteOut(BaseModel):
     id_tramite: int
     codigo_seguimiento: str
