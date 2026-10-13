@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from app import crud, models, schemas
+from app import campos_servicio, crud, models, schemas
 from app.database import get_db
 from app.seguridad import get_usuario_actual, limiter
 
@@ -78,3 +78,40 @@ def obtener_formulario_cliente(request: Request, codigo: str, db: Session = Depe
         raise HTTPException(status_code=404, detail="No encontramos un trámite con ese código.")
 
     return crud.obtener_formulario(tramite)
+
+@router.post("/codigo/{codigo}/datos", response_model=schemas.SeguimientoOut)
+@limiter.limit("10/minute")
+def enviar_datos_cliente(
+    request: Request,
+    codigo: str,
+    envio: schemas.EnvioDatosIn,
+    db: Session = Depends(get_db),
+):
+    """Público — el cliente envía UNA sola vez los datos que faltan de su empresa.
+
+    Exige el consentimiento y la confirmación de que no podrá editar. Si hay campos con errores responde 422 con todos 
+    juntos ({"mensaje", "errores"}); si el trámite ya recibió datos, ya no admite envíos o el RUT no se puede registrar, responde 409. 
+    Devuelve solo el estado del trámite, nunca los datos ingresados. Límite de 10 envíos por minuto por IP."""
+    if len(codigo.strip()) != 8:
+        raise HTTPException(status_code=400, detail="El código debe tener 8 caracteres.")
+
+    tramite = crud.obtener_tramite_por_codigo(db, codigo)
+    if not tramite:
+        raise HTTPException(status_code=404, detail="No encontramos un trámite con ese código.")
+
+    try:
+        tramite = crud.registrar_envio_datos(db, tramite, envio)
+    except campos_servicio.ErrorCampos as e:
+        raise HTTPException(
+            status_code=422,
+            detail={"mensaje": "Revisa los campos marcados.", "errores": e.errores},
+        )
+    except crud.EnvioDatosRechazado as e:
+        raise HTTPException(status_code=409, detail=e.mensaje)
+
+    return schemas.SeguimientoOut(
+        codigo_seguimiento=tramite.codigo_seguimiento,
+        nombre_servicio=tramite.servicio.nombre,
+        estado_actual=tramite.estado_actual,
+        documento_disponible=crud.documento_disponible(tramite),
+    )
