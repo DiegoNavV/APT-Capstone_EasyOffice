@@ -4,6 +4,7 @@ import { ApiError } from '../lib/api.js'
 import { convertirSolicitud, listarSolicitudes } from '../lib/solicitudesApi.js'
 import { useNovedadesSolicitudes } from '../lib/useNovedadesSolicitudes.js'
 import PaginaPanel from '../components/PaginaPanel.jsx'
+import SelectorEmpresa, { textoEmpresa } from '../components/SelectorEmpresa.jsx'
 
 // Solicitudes que llegan desde el formulario "Contrata aquí" del sitio público.
 // El agente/admin confirma el pago manual y la convierte en trámite: ahí se genera el código de 8 caracteres que luego le entrega al cliente.
@@ -35,8 +36,9 @@ function Dato({ etiqueta, valor }) {
   )
 }
 
-function TarjetaSolicitud({ solicitud, onConvertir }) {
+function TarjetaSolicitud({ solicitud, accessToken, onConvertir, onSesionVencida }) {
   const [confirmando, setConfirmando] = useState(false)
+  const [empresa, setEmpresa] = useState(null)
   const [convirtiendo, setConvirtiendo] = useState(false)
   const [errorConversion, setErrorConversion] = useState('')
   const [copiado, setCopiado] = useState(false)
@@ -48,7 +50,7 @@ function TarjetaSolicitud({ solicitud, onConvertir }) {
     setConvirtiendo(true)
     setErrorConversion('')
     try {
-      await onConvertir(solicitud)
+      await onConvertir(solicitud, empresa?.id_empresa)
       setConfirmando(false)
     } catch (e) {
       setErrorConversion(e instanceof ApiError ? e.message : 'No se pudo conectar con el servidor.')
@@ -120,6 +122,22 @@ function TarjetaSolicitud({ solicitud, onConvertir }) {
               ¿Confirmas que el pago de <span className="font-semibold">{solicitud.nombre}</span> fue recibido?
               Se generará el código de seguimiento y la solicitud pasará a trámite.
             </p>
+
+            <SelectorEmpresa
+              idSolicitud={solicitud.id_solicitud}
+              accessToken={accessToken}
+              seleccionada={empresa}
+              onSeleccionar={setEmpresa}
+              onSesionVencida={onSesionVencida}
+              deshabilitado={convirtiendo}
+            />
+
+            {empresa && (
+              <p className="mt-3 text-sm text-ink-primary">
+                El trámite quedará vinculado a <span className="font-semibold">{textoEmpresa(empresa)}</span>.
+              </p>
+            )}
+
             <div className="mt-3 flex items-center gap-3">
               <button
                 type="button"
@@ -133,6 +151,7 @@ function TarjetaSolicitud({ solicitud, onConvertir }) {
                 type="button"
                 onClick={() => {
                   setConfirmando(false)
+                  setEmpresa(null)
                   setErrorConversion('')
                 }}
                 disabled={convirtiendo}
@@ -233,11 +252,12 @@ export default function Solicitudes() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [haySesion, listo, filtro, pagina, recarga])
 
-  async function convertir(solicitud) {
+  async function convertir(solicitud, idEmpresa) {
     try {
       const tramite = await convertirSolicitud({
         accessToken,
-        idSolicitud: solicitud.id_solicitud
+        idSolicitud: solicitud.id_solicitud,
+        idEmpresa
       })
       setItems((prev) =>
         prev.map((s) =>
@@ -355,7 +375,7 @@ export default function Solicitudes() {
         ) : (
           <div className={`space-y-4 ${cargando ? 'opacity-60' : ''}`}>
             {items.map((s) => (
-              <TarjetaSolicitud key={s.id_solicitud} solicitud={s} onConvertir={convertir} />
+              <TarjetaSolicitud key={s.id_solicitud} solicitud={s} accessToken={accessToken} onConvertir={convertir} onSesionVencida={cerrarSesion}/>
             ))}
           </div>
         )}
