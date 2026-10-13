@@ -4,10 +4,13 @@ Modelos SQLAlchemy. Deben coincidir con db/init/01_schema.sql.
   - Login del panel (Épica A): rol, usuario, refresh_token
   - Formulario de contacto -> solicitud -> trámite:
     servicio_contratado, solicitud_contacto, cliente, tramite, historial_estado
+  - Datos que el cliente entrega con su código: datos_empresa_tramite
 """
 from sqlalchemy import (
-    Column, Integer, String, Text, Boolean, TIMESTAMP, ForeignKey, func
+    JSON, CheckConstraint, Column, Integer, String, Text, Boolean, TIMESTAMP,
+    ForeignKey, func
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -124,7 +127,35 @@ class Tramite(Base):
     cliente = relationship("Cliente")
     servicio = relationship("ServicioContratado")
     usuario_responsable = relationship("Usuario")
+    datos_empresa = relationship("DatosEmpresaTramite", back_populates="tramite", uselist=False)
 
+
+class DatosEmpresaTramite(Base):
+    """Datos de la empresa que el cliente entrega UNA sola vez con su código.
+
+    El solicitante (quien llenó el formulario público) vive en
+    solicitud_contacto/cliente; aquí va la empresa. `razon_social` y
+    `rut_empresa` son columnas propias porque la lista del panel las muestra y
+    las busca; el resto de los campos varía según el servicio y se guarda en
+    `datos`, con los nombres de columna de los Excel de Easy Office.
+
+    La clave única en id_tramite garantiza el envío único a nivel de base de
+    datos: un segundo intento falla aunque se salten las validaciones."""
+
+    __tablename__ = "datos_empresa_tramite"
+    __table_args__ = (CheckConstraint("consentimiento_aceptado", name="ck_datos_empresa_consentimiento"),)
+
+    id_datos = Column(Integer, primary_key=True, index=True)
+    id_tramite = Column(Integer, ForeignKey("tramite.id_tramite"), nullable=False, unique=True)
+    razon_social = Column(String(200), nullable=False)
+    rut_empresa = Column(String(15), nullable=False, index=True)
+    # JSONB en PostgreSQL; JSON genérico en SQLite (tests).
+    datos = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=dict)
+    solicitante_es_representante = Column(Boolean, nullable=False)
+    consentimiento_aceptado = Column(Boolean, nullable=False)
+    fecha_envio = Column(TIMESTAMP, nullable=False, server_default=func.now())
+
+    tramite = relationship("Tramite", back_populates="datos_empresa")
 
 class HistorialEstado(Base):
     __tablename__ = "historial_estado"
