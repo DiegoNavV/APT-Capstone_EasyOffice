@@ -1,8 +1,8 @@
 """Esquemas Pydantic: login del panel y módulo solicitud_contacto / tramite (seguimiento)."""
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, StrictBool, field_validator
 
 from app.utils import normalizar_email, normalizar_rut
 
@@ -156,6 +156,18 @@ class FormularioOut(BaseModel):
     formulario_disponible: bool
     # Vacía cuando el formulario no está disponible.
     campos: list[CampoFormularioOut]
+
+
+class EnvioDatosIn(BaseModel):
+    """Lo que el cliente envía UNA sola vez con su código. Los valores de los campos se validan después contra la definición 
+    del servicio (así se informan todos los errores juntos, campo por campo). Las tres confirmaciones son estrictas (true/false reales) 
+    y las exige el servidor, no solo el formulario."""
+    model_config = {"extra": "forbid"}
+
+    campos: dict[str, Any] = Field(default_factory=dict)
+    solicitante_es_representante: StrictBool
+    consentimiento_aceptado: StrictBool
+    acepta_no_editar: StrictBool
 
 
 # ---------- Seguimiento público por código ----------

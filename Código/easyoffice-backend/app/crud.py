@@ -5,6 +5,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, contains_eager, joinedload
 
 from app import campos_servicio, enmascarado, models, schemas
@@ -248,6 +249,131 @@ def obtener_tramite_por_codigo(db: Session, codigo: str) -> models.Tramite | Non
         .filter(models.Tramite.codigo_seguimiento == codigo.strip().upper())
         .first()
     )
+
+
+class EnvioDatosRechazado(Exception):
+    """El envío no se puede aceptar (no por errores de campos). El mensaje es
+    el que ve el cliente, por eso es genérico a propósito."""
+
+    def __init__(self, mensaje: str):
+        super().__init__(mensaje)
+        self.mensaje = mensaje
+
+
+class DatosYaEnviados(EnvioDatosRechazado):
+    def __init__(self):
+        super().__init__("Ya recibimos tus datos. Con tu código puedes revisar el estado de tu trámite.")
+
+
+class FormularioNoDisponible(EnvioDatosRechazado):
+    def __init__(self):
+        super().__init__("Este trámite ya no admite el envío de datos.")
+
+
+class RutNoDisponible(EnvioDatosRechazado):
+    # Mismo mensaje exista o no la empresa, para no revelar qué RUT están registrados.
+    def __init__(self):
+        super().__init__("No pudimos registrar ese RUT. Contacta a tu agente indicando tu código.")
+
+
+MENSAJE_CAMPO_REGISTRADO = (
+    "Este dato ya está registrado y no se puede modificar desde aquí. "
+    "Si necesitas cambiarlo, contacta a tu agente."
+)
+
+
+def registrar_envio_datos(
+    db: Session, tramite: models.Tramite, envio: schemas.EnvioDatosIn
+) -> models.Tramite:
+    """Guarda los datos que el cliente envía con su código. Ocurre UNA sola vez.
+
+    Reglas (todas se comprueban en el servidor):
+      - solo si el trámite espera datos y aún no recibió un envío;
+      - exige el consentimiento y la confirmación de que no podrá editar;
+      - solo se aceptan los campos que faltan: uno ya registrado se rechaza nombrándolo (nunca se sobrescribe);
+      - sin empresa vinculada se crea una nueva y se vincula; si ese RUT ya existe se rechaza con un mensaje genérico 
+      (el vínculo con una empresa existente lo hace un agente);
+      - con empresa vinculada solo se completan los campos vacíos;
+      - todo se guarda en una sola transacción y el trámite pasa a `procesando_firma` (o `en_revision` si el servicio requiere revisión)."""
+    if tramite.datos_empresa is not None:
+        raise DatosYaEnviados()
+    definicion = campos_servicio.campos_para_servicio(tramite.servicio.nombre)
+    if definicion is None or tramite.estado_actual != ESTADO_ESPERANDO_DATOS:
+        raise FormularioNoDisponible()
+
+    empresa = tramite.empresa
+    errores: dict[str, str] = {}
+
+    if not envio.consentimiento_aceptado:
+        errores["consentimiento_aceptado"] = "Debes aceptar el tratamiento de tus datos para continuar."
+    if not envio.acepta_no_editar:
+        errores["acepta_no_editar"] = "Debes confirmar que no podrás editar tus datos después de enviarlos."
+
+    registrados = {c.clave for c in definicion if _valor_guardado(empresa, c)}
+    pendientes = tuple(c for c in definicion if c.clave not in registrados)
+    valores = dict(envio.campos)
+    for clave in sorted(registrados & set(valores)):
+        errores[clave] = MENSAJE_CAMPO_REGISTRADO
+        del valores[clave]
+
+    limpios: dict[str, str] = {}
+    try:
+        limpios = campos_servicio.validar_campos(pendientes, valores)
+    except campos_servicio.ErrorCampos as exc:
+        errores.update(exc.errores)
+
+    if errores:
+        raise campos_servicio.ErrorCampos(errores)
+
+    columnas, datos = campos_servicio.separar_para_guardar(pendientes, limpios)
+
+    try:
+        if empresa is None:
+            rut = columnas.get("rut_empresa")
+            razon = columnas.get("razon_social")
+            if not rut or not razon:
+                # La definición del servicio no pide lo mínimo para crear la empresa.
+                raise FormularioNoDisponible()
+            if db.query(models.Empresa).filter_by(rut_empresa=rut).first():
+                raise RutNoDisponible()
+            empresa = models.Empresa(rut_empresa=rut, razon_social=razon, datos=datos)
+            db.add(empresa)
+            db.flush()
+            tramite.id_empresa = empresa.id_empresa
+        elif datos:
+            # Se asigna un diccionario nuevo: SQLAlchemy no detecta cambios dentro del JSON.
+            empresa.datos = {**(empresa.datos or {}), **datos}
+
+        db.add(models.DatosEmpresaTramite(
+            id_tramite=tramite.id_tramite,
+            solicitante_es_representante=envio.solicitante_es_representante,
+            consentimiento_aceptado=True,
+        ))
+
+        nuevo_estado = "en_revision" if tramite.servicio.requiere_revision_humana else "procesando_firma"
+        tramite.estado_actual = nuevo_estado
+        db.add(models.HistorialEstado(
+            id_tramite=tramite.id_tramite,
+            estado=nuevo_estado,
+            comentario=(
+                "El cliente envió sus datos. Queda en revisión."
+                if nuevo_estado == "en_revision"
+                else "El cliente envió sus datos. Queda en proceso de firma."
+            ),
+        ))
+        db.commit()
+    except EnvioDatosRechazado:
+        db.rollback()
+        raise
+    except IntegrityError:
+        # Dos envíos casi simultáneos, o el mismo RUT creado justo antes por otro.
+        db.rollback()
+        if db.query(models.DatosEmpresaTramite).filter_by(id_tramite=tramite.id_tramite).first():
+            raise DatosYaEnviados() from None
+        raise RutNoDisponible() from None
+
+    db.refresh(tramite)
+    return tramite
 
 
 def documento_disponible(tramite: models.Tramite) -> bool:
