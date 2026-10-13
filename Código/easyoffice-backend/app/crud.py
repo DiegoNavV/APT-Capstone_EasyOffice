@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload
 
-from app import models, schemas
+from app import campos_servicio, enmascarado, models, schemas
 from app.utils import normalizar_rut
 
 ESTADOS_DOCUMENTO_DISPONIBLE = {"firmado", "entregado"}
@@ -252,6 +252,61 @@ def obtener_tramite_por_codigo(db: Session, codigo: str) -> models.Tramite | Non
 
 def documento_disponible(tramite: models.Tramite) -> bool:
     return tramite.estado_actual in ESTADOS_DOCUMENTO_DISPONIBLE
+
+
+# ---------------------------------------------------------------------------
+# Formulario del cliente (público, se accede con el código del trámite)
+# ---------------------------------------------------------------------------
+
+ESTADO_ESPERANDO_DATOS = "generado"
+
+
+def _valor_guardado(empresa: models.Empresa | None, campo: campos_servicio.Campo):
+    """Lo que la empresa vinculada ya tiene para este campo (None si no hay)."""
+    if empresa is None:
+        return None
+    if campo.en_columna:
+        return getattr(empresa, campo.clave, None)
+    return (empresa.datos or {}).get(campo.clave)
+
+
+def obtener_formulario(tramite: models.Tramite) -> schemas.FormularioOut:
+    """Qué debe completar el cliente en este trámite.
+
+    Pide solo los campos del servicio contratado. Los que la empresa vinculada ya tiene se marcan como registrados y se 
+    devuelven ENMASCARADOS; nunca se devuelven completos (ver app/enmascarado.py). Si el cliente ya envió sus datos, solo se informa 
+    el estado, sin ningún dato."""
+    enviados = tramite.datos_empresa is not None
+    definicion = campos_servicio.campos_para_servicio(tramite.servicio.nombre)
+    disponible = (
+        not enviados
+        and definicion is not None
+        and tramite.estado_actual == ESTADO_ESPERANDO_DATOS
+    )
+
+    campos: list[schemas.CampoFormularioOut] = []
+    if disponible:
+        for campo in definicion:
+            guardado = _valor_guardado(tramite.empresa, campo)
+            registrado = bool(guardado)
+            campos.append(schemas.CampoFormularioOut(
+                clave=campo.clave,
+                etiqueta=campo.etiqueta,
+                tipo=campo.tipo,
+                ayuda=campo.ayuda,
+                max_largo=campo.max_largo,
+                registrado=registrado,
+                valor_enmascarado=enmascarado.enmascarar(campo, guardado) if registrado else None,
+            ))
+
+    return schemas.FormularioOut(
+        codigo_seguimiento=tramite.codigo_seguimiento,
+        nombre_servicio=tramite.servicio.nombre,
+        estado_actual=tramite.estado_actual,
+        datos_enviados=enviados,
+        formulario_disponible=disponible,
+        campos=campos,
+    )
 
 
 # ---------------------------------------------------------------------------
