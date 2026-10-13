@@ -131,6 +131,33 @@ class TramiteOut(BaseModel):
         from_attributes = True
 
 
+# ---------- Formulario del cliente (público, con el código del trámite) ----------
+
+class CampoFormularioOut(BaseModel):
+    clave: str
+    etiqueta: str
+    tipo: str            # texto | rut | email | celular | fecha
+    ayuda: str
+    max_largo: int
+    # True: la empresa vinculada ya tiene este dato; el cliente no lo escribe.
+    registrado: bool
+    # Solo si `registrado`: el dato enmascarado (nunca completo, salvo la fecha).
+    valor_enmascarado: Optional[str] = None
+
+
+class FormularioOut(BaseModel):
+    codigo_seguimiento: str
+    nombre_servicio: str
+    estado_actual: str
+    # True si el cliente ya envió sus datos: solo se informa el estado.
+    datos_enviados: bool
+    # False si no se puede completar ahora (ya enviado, el trámite ya no está en
+    # espera de datos, o el servicio aún no tiene formulario definido).
+    formulario_disponible: bool
+    # Vacía cuando el formulario no está disponible.
+    campos: list[CampoFormularioOut]
+
+
 # ---------- Seguimiento público por código ----------
 
 class SeguimientoOut(BaseModel):

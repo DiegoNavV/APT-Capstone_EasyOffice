@@ -1,11 +1,11 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app import crud, models, schemas
 from app.database import get_db
-from app.seguridad import get_usuario_actual
+from app.seguridad import get_usuario_actual, limiter
 
 router = APIRouter(prefix="/api/tramites", tags=["tramites"])
 
@@ -40,8 +40,8 @@ def resumen_tramites(
     db: Session = Depends(get_db),
     _usuario: models.Usuario = Depends(get_usuario_actual),
 ):
-    """Uso del panel (requiere login): KPIs de la cabecera y las opciones de los
-    filtros (servicios y agentes activos). Solo números y nombres."""
+    """Uso del panel (requiere login): KPIs de la cabecera y las opciones de los filtros (servicios y agentes activos). 
+    Solo números y nombres."""
     return crud.resumen_tramites(db)
 
 
@@ -61,3 +61,20 @@ def consultar_tramite_por_codigo(codigo: str, db: Session = Depends(get_db)):
         estado_actual=tramite.estado_actual,
         documento_disponible=crud.documento_disponible(tramite),
     )
+
+@router.get("/codigo/{codigo}/formulario", response_model=schemas.FormularioOut)
+@limiter.limit("30/minute")
+def obtener_formulario_cliente(request: Request, codigo: str, db: Session = Depends(get_db)):
+    """Público — el cliente entra con su código de seguimiento (no tiene cuenta).
+
+    Devuelve los campos que debe completar según su servicio. Si su empresa ya estaba vinculada, los datos que ya existen 
+    salen ENMASCARADOS y marcados como registrados; nunca completos. Si ya envió sus datos, solo informa el estado.
+    Límite de 30 consultas por minuto por IP (el código es la única credencial)."""
+    if len(codigo.strip()) != 8:
+        raise HTTPException(status_code=400, detail="El código debe tener 8 caracteres.")
+
+    tramite = crud.obtener_tramite_por_codigo(db, codigo)
+    if not tramite:
+        raise HTTPException(status_code=404, detail="No encontramos un trámite con ese código.")
+
+    return crud.obtener_formulario(tramite)
