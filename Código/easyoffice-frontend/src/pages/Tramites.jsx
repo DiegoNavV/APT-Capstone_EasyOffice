@@ -248,7 +248,7 @@ export default function Tramites() {
         </div>
 
         <div className="bg-subtle border-b border-line flex items-center px-4 py-[11px] text-[11px] font-semibold tracking-wide text-ink-muted">
-          <span className="flex-1">CLIENTE</span>
+          <span className="flex-1">SOLICITANTE / EMPRESA</span>
           <span className="w-[230px]">DOCUMENTO</span>
           <span className="w-[170px]">AGENTE</span>
           <span className="w-[150px]">ACTUALIZADO</span>
@@ -274,8 +274,14 @@ export default function Tramites() {
               // No hay vista de detalle construida todavía: la fila no navega a ningún lado.
               <a key={t.id_tramite} href="#" onClick={detenerClic} className="border-b border-line last:border-b-0 cursor-pointer flex items-center px-4 py-[13px] hover:bg-canvas transition-colors">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-ink-primary">{t.cliente.nombre}</p>
+                  <p
+                    className="text-sm font-medium text-ink-primary"
+                    title={t.cliente.datos_pendientes ? 'Nombre de quien hizo la solicitud. Se confirma con el cliente cuando complete los datos de su empresa.' : undefined}
+                  >
+                    {t.cliente.nombre}
+                  </p>
                   <p className="text-xs text-ink-muted">
+                    {t.cliente.datos_pendientes && 'Solicitante · '}
                     {t.cliente.rut ? `RUT ${t.cliente.rut}` : 'Sin RUT'} · <span className="font-mono tracking-wider">{t.codigo_seguimiento}</span>
                     {t.cliente.datos_pendientes && ' · Datos de empresa pendientes'}
                   </p>
