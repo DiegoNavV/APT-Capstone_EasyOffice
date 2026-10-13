@@ -145,3 +145,22 @@ CREATE TABLE historial_estado (
 );
 
 CREATE INDEX idx_historial_id_tramite ON historial_estado(id_tramite);
+
+-- =========================
+-- TABLA: datos_empresa_tramite (datos que el cliente entrega UNA sola vez con su código de seguimiento.
+--  El solicitante vive en solicitud_contacto/cliente; aquí va la empresa. razon_social y rut_empresa son columnas propias 
+--  porque la lista del panel las muestra y las busca; el resto de los campos varía según el servicio y se guarda en "datos" 
+--  con los nombres de columna de los Excel de Easy Office)
+-- =========================
+CREATE TABLE datos_empresa_tramite (
+    id_datos                     SERIAL PRIMARY KEY,
+    id_tramite                   INTEGER NOT NULL UNIQUE REFERENCES tramite(id_tramite),
+    razon_social                 VARCHAR(200) NOT NULL,
+    rut_empresa                  VARCHAR(15) NOT NULL,
+    datos                        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    solicitante_es_representante BOOLEAN NOT NULL,
+    consentimiento_aceptado      BOOLEAN NOT NULL CHECK (consentimiento_aceptado),
+    fecha_envio                  TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_datos_empresa_rut ON datos_empresa_tramite(rut_empresa);
