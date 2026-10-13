@@ -37,15 +37,30 @@ export function listarSolicitudes({ accessToken, estado, limit, offset }) {
 
 // Confirma el pago manual y convierte la solicitud en trámite (genera el código).
 // No se envía el responsable: el backend usa al usuario de la sesión.
-export function convertirSolicitud({ accessToken, idSolicitud }) {
+// idEmpresa es opcional: si el agente eligió una empresa ya existente, el trámite queda vinculado a ella; sin idEmpresa no se manda
+//  cuerpo y todo funciona como antes.
+export function convertirSolicitud({ accessToken, idSolicitud, idEmpresa }) {
   return pedir(`/api/solicitudes-contacto/${idSolicitud}/convertir`, {
     accessToken,
-    method: 'POST'
+    method: 'POST',
+    body: idEmpresa ? { id_empresa: idEmpresa } : undefined
   })
 }
 
-// Aviso "hay solicitudes nuevas": devuelve solo números ({ nuevas, ultimo_id }),
-// nunca datos de las solicitudes. Sin desdeId solo informa el id más alto.
+// Empresas que el mismo solicitante ya tiene en trámites anteriores (puede venir vacío).
+// Devuelve [{ id_empresa, rut_empresa, razon_social }].
+export function obtenerEmpresasSugeridas({ accessToken, idSolicitud }) {
+  return pedir(`/api/solicitudes-contacto/${idSolicitud}/empresas-sugeridas`, { accessToken })
+}
+
+// Buscador de empresas por razón social o RUT (el backend exige al menos 2 caracteres y devuelve como máximo 10, solo id, RUT y razón social).
+export function buscarEmpresas({ accessToken, texto }) {
+  const params = new URLSearchParams({ q: texto })
+  return pedir(`/api/empresas?${params}`, { accessToken })
+}
+
+// Aviso "hay solicitudes nuevas": devuelve solo números ({ nuevas, ultimo_id }), nunca datos de las solicitudes. Sin desdeId 
+// solo informa el id más alto.
 export function obtenerNovedades({ accessToken, desdeId }) {
   const params = new URLSearchParams()
   if (desdeId !== null && desdeId !== undefined) params.set('desde_id', String(desdeId))
