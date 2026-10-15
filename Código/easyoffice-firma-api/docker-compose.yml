@@ -1,0 +1,127 @@
+# API de firma electrónica (FES) para pruebas del CRM Easy Office.
+# Levantar todo:  docker compose up --build
+#
+# Puertos elegidos para no chocar con el compose del CRM (8000, 8080, 5432).
+# Solo se publican en 127.0.0.1: no quedan expuestos a la red.
+#
+# Conexión con el CRM: el backend del CRM corre en OTRO compose, y desde su
+# contenedor "localhost" es él mismo. Por eso la API se une a la red Docker
+# compartida "easyoffice-net" con el nombre "firma-api":
+#   CRM -> API:      http://firma-api:8000/api/v1/...
+#   API -> CRM (webhooks, Fase 5): http://backend:8000/...
+# El compose del CRM debe declarar esa red como externa (se explica en el README).
+
+x-api-env: &api-env
+  APP_ENV: ${APP_ENV:-development}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  RETENTION_YEARS: ${RETENTION_YEARS:-6}
+  DOCUMENT_DEFAULT_EXPIRATION_DAYS: ${DOCUMENT_DEFAULT_EXPIRATION_DAYS:-30}
+  DATABASE_URL: postgresql+psycopg2://firma:${POSTGRES_PASSWORD:-firma}@db:5432/firma_api
+  REDIS_URL: redis://redis:6379/0
+  S3_ENDPOINT: minio:9000
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-firma-minio}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:-dev-inseguro-cambiar}
+  S3_BUCKET_DOCUMENTS: firma-documents
+  SMTP_HOST: mailpit
+  SMTP_PORT: "1025"
+  MASTER_KEY_HEX: ${MASTER_KEY_HEX:-dev-inseguro-cambiar}
+  TOKEN_PEPPER: ${TOKEN_PEPPER:-dev-inseguro-cambiar}
+  FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
+
+services:
+  api:
+    build: .
+    environment: *api-env
+    ports:
+      - "127.0.0.1:8100:8000"
+    volumes:
+      # Recarga en caliente en desarrollo.
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./tests:/app/tests
+    networks:
+      default: {}
+      easyoffice-net:
+        aliases: [firma-api]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  worker:
+    build: .
+    command: celery -A app.worker.celery_app worker --loglevel=INFO
+    environment: *api-env
+    # El worker envía los webhooks al CRM (Fase 5): necesita la red compartida.
+    networks:
+      - default
+      - easyoffice-net
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: firma
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-firma}
+      POSTGRES_DB: firma_api
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U firma -d firma_api"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:RELEASE.2024-10-02T17-50-41Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-firma-minio}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-dev-inseguro-cambiar}
+    ports:
+      # Consola web de MinIO para revisar los archivos guardados.
+      - "127.0.0.1:9101:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    # Captura los correos (OTP) en desarrollo; nada sale a internet.
+    image: axllent/mailpit:latest
+    ports:
+      - "127.0.0.1:8025:8025"
+
+volumes:
+  db_data:
+  minio_data:
+
+networks:
+  default: {}
+  # Red compartida con el CRM. Este compose la crea con un nombre fijo.
+  easyoffice-net:
+    name: easyoffice-net
