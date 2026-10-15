@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import Header from '../components/Header.jsx'
 import Footer from '../components/Footer.jsx'
 import { validarCodigoSeguimiento } from '../utils/validaciones.js'
+import { guardarCodigo, leerCodigo } from '../utils/codigoSesion.js'
 
 // Estados posibles definidos en historial_estado: generado, procesando_firma, en_revision (solo caso B), firmado, entregado.
+// "generado" es el estado inicial: el código ya existe y falta que el cliente complete sus datos.
 const ESTADOS_LABEL = {
-  generado: 'Generado',
+  generado: 'Esperando tus datos',
   procesando_firma: 'Procesando firma',
   en_revision: 'En revisión',
   firmado: 'Firmado',
@@ -14,11 +16,12 @@ const ESTADOS_LABEL = {
 }
 
 export default function SeguimientoTramite() {
-  const [searchParams] = useSearchParams()
-  const [codigo, setCodigo] = useState(searchParams.get('codigo') ?? '')
+  // El código no viaja en la URL: se toma de la sesión de esta pestaña (ver utils/codigoSesion.js).
+  const [codigo, setCodigo] = useState(() => leerCodigo())
   const [buscando, setBuscando] = useState(false)
   const [tramite, setTramite] = useState(null)
   const [error, setError] = useState(null)
+  const consultaInicial = useRef(false)
 
   const codigoValido = validarCodigoSeguimiento(codigo)
 
@@ -27,23 +30,25 @@ export default function SeguimientoTramite() {
     setCodigo(limpio)
   }
 
-  async function consultar(e) {
-    e.preventDefault()
-    if (!codigoValido) {
-      setError('El código debe tener 8 caracteres (letras y números).')
-      return
-    }
+  async function consultarCodigo(codigoAConsultar) {
     setBuscando(true)
     setError(null)
     setTramite(null)
     try {
-      const respuesta = await fetch(`${import.meta.env.VITE_API_URL}/api/tramites/codigo/${codigo}`)
+      const respuesta = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/tramites/codigo/${encodeURIComponent(codigoAConsultar)}`
+      )
 
+      if (respuesta.status === 429) {
+        setError('Hiciste demasiados intentos en poco tiempo. Espera un minuto e inténtalo de nuevo.')
+        return
+      }
       if (!respuesta.ok) {
         throw new Error('No encontrado')
       }
 
       const datos = await respuesta.json()
+      guardarCodigo(codigoAConsultar)
       setTramite({
         codigo_seguimiento: datos.codigo_seguimiento,
         servicio: datos.nombre_servicio,
@@ -56,6 +61,25 @@ export default function SeguimientoTramite() {
       setBuscando(false)
     }
   }
+
+  // Si el cliente llega con su código ya guardado en la sesión (desde el botón de "Continuar" o
+  // desde el formulario de datos), se consulta de inmediato.
+  useEffect(() => {
+    if (consultaInicial.current) return
+    consultaInicial.current = true
+    if (validarCodigoSeguimiento(codigo)) consultarCodigo(codigo.trim().toUpperCase())
+  }, [])
+
+  function consultar(e) {
+    e.preventDefault()
+    if (!codigoValido) {
+      setError('El código debe tener 8 caracteres (letras y números).')
+      return
+    }
+    consultarCodigo(codigo)
+  }
+
+  const faltanDatos = tramite?.estado_actual === 'generado'
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -102,7 +126,19 @@ export default function SeguimientoTramite() {
                 {ESTADOS_LABEL[tramite.estado_actual] ?? tramite.estado_actual}
               </span>
 
-              {tramite.documento_disponible ? (
+              {faltanDatos ? (
+                <>
+                  <p className="mt-6 text-sm text-gray-600">
+                    Para avanzar con tu trámite necesitamos que completes algunos datos.
+                  </p>
+                  <Link
+                    to="/completar-datos"
+                    className="mt-4 block w-full text-center bg-primary hover:bg-primary-dark text-white font-semibold py-3 rounded-lg transition-colors"
+                  >
+                    Completar mis datos
+                  </Link>
+                </>
+              ) : tramite.documento_disponible ? (
                 <button
                   type="button"
                   className="mt-6 w-full bg-accent hover:bg-amber-500 text-white font-semibold py-3 rounded-lg transition-colors"

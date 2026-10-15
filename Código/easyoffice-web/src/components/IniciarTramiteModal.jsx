@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { validarCodigoSeguimiento } from '../utils/validaciones.js'
+import { guardarCodigo } from '../utils/codigoSesion.js'
 
 export default function IniciarTramiteModal({ open, onClose }) {
   const [codigo, setCodigo] = useState('')
@@ -21,8 +22,9 @@ export default function IniciarTramiteModal({ open, onClose }) {
     e.preventDefault()
     setTocado(true)
     if (!codigoValido) return
+    guardarCodigo(codigo)
     onClose()
-    navigate(`/seguimiento?codigo=${codigo}`)
+    navigate('/seguimiento')
   }
 
   function irAContratar() {
