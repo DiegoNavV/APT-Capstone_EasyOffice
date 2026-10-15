@@ -46,8 +46,10 @@ def resumen_tramites(
 
 
 @router.get("/codigo/{codigo}", response_model=schemas.SeguimientoOut)
-def consultar_tramite_por_codigo(codigo: str, db: Session = Depends(get_db)):
-    """Público — usado por la página de seguimiento del sitio easyoffice-web."""
+@limiter.limit("30/minute")
+def consultar_tramite_por_codigo(request: Request, codigo: str, db: Session = Depends(get_db)):
+    """Público — usado por la página de seguimiento del sitio easyoffice-web.
+    Limitado por IP: el código es la única credencial, así que se frena el que pruebe códigos a ciegas."""
     if len(codigo.strip()) != 8:
         raise HTTPException(status_code=400, detail="El código debe tener 8 caracteres.")
 
