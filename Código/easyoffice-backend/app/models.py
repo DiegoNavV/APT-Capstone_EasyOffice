@@ -125,6 +125,35 @@ class Empresa(Base):
 
     tramites = relationship("Tramite", back_populates="empresa")
 
+
+class Sucursal(Base):
+    """Sucursal de Easy Office. Sus datos van en el contrato; las iniciales forman el folio (LF-01-2026)."""
+
+    __tablename__ = "sucursal"
+
+    id_sucursal = Column(Integer, primary_key=True, index=True)
+    iniciales = Column(String(5), nullable=False, unique=True)
+    nombre = Column(String(100), nullable=False)
+    direccion = Column(String(200), nullable=False)
+    comuna = Column(String(100), nullable=False)
+    region = Column(String(100), nullable=False)
+    rol_propiedad = Column(String(30))
+    activa = Column(Boolean, nullable=False, default=True)
+
+class ServicioOfrecido(Base):
+    """Catálogo de lo que vende Easy Office (domicilio tributario, bodega, etc.) con precio y ciclo de pago de referencia. No es lo mismo 
+    que ServicioContratado, que son los trámites de la plataforma."""
+
+    __tablename__ = "servicio_ofrecido"
+
+    id_servicio_ofrecido = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String(150), nullable=False, unique=True)
+    descripcion = Column(Text)
+    precio_referencia = Column(Integer)
+    ciclo_pago_defecto = Column(String(20))
+    activo = Column(Boolean, nullable=False, default=True)
+
+
 class Tramite(Base):
     __tablename__ = "tramite"
 
@@ -134,6 +163,10 @@ class Tramite(Base):
     id_usuario_responsable = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=True)
     id_solicitud_origen = Column(Integer, ForeignKey("solicitud_contacto.id_solicitud"), nullable=True)
     id_empresa = Column(Integer, ForeignKey("empresa.id_empresa"), nullable=True)
+    id_sucursal = Column(Integer, ForeignKey("sucursal.id_sucursal"), nullable=True)
+    # Condiciones del contrato que ingresa el agente (ver crud al convertir una solicitud).
+    folio = Column(String(20), unique=True)
+    condiciones = Column(JSON().with_variant(JSONB(), "postgresql"))
     codigo_seguimiento = Column(String(8), nullable=False, unique=True, index=True)
     estado_actual = Column(String(30), nullable=False, default="generado")
     ruta_documento_generado = Column(String(255))
@@ -144,6 +177,7 @@ class Tramite(Base):
     servicio = relationship("ServicioContratado")
     usuario_responsable = relationship("Usuario")
     empresa = relationship("Empresa", back_populates="tramites")
+    sucursal = relationship("Sucursal")
     datos_empresa = relationship("DatosEmpresaTramite", back_populates="tramite", uselist=False)
 
 

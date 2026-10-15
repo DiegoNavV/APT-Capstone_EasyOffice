@@ -22,6 +22,25 @@ INSERT INTO servicio_contratado (id_servicio, nombre, descripcion, requiere_revi
     (2, 'Autorización de domicilio tributario', 'Generación y firma de autorización de domicilio tributario.', FALSE, TRUE)
 ON CONFLICT (id_servicio) DO NOTHING;
 
+-- Sucursales (hoja INFORMACIONES del formulario de Easy Office).
+-- Las iniciales LF y VL salen del formato de folio (LF-01-2026 / VL-01-2026). La de San Antonio (SA) es una suposicion nuestra, y su 
+-- region no venia en la planilla: Easy Office debe confirmarlas.
+INSERT INTO sucursal (iniciales, nombre, direccion, comuna, region, rol_propiedad) VALUES
+    ('LF', 'La Florida', 'Vicuña Mackenna Poniente #7255, Oficina 707', 'La Florida', 'Metropolitana', '271-147'),
+    ('VL', 'Valparaíso', 'Blanco N°1215, Oficina 405', 'Valparaíso', 'Valparaíso', '15-12'),
+    ('SA', 'San Antonio', 'El Potrerillo N°8, Oficina C, Algarrobo', 'San Antonio', 'Valparaíso', '267-56')
+ON CONFLICT (iniciales) DO NOTHING;
+
+-- Servicios que vende Easy Office, con precio y ciclo de pago de referencia (hoja INFORMACIONES; Bodega sale de la planilla de muestra). 
+-- El agente puede ajustar precio y ciclo en cada contrato.
+INSERT INTO servicio_ofrecido (nombre, descripcion, precio_referencia, ciclo_pago_defecto) VALUES
+    ('Creación de empresa', '*Constitución empresa en un día, hasta 3 socios  *Obtención de rut  *Domicilio tributario x 3 meses  * Inicio de actividad ante el SII  *Inscripción factura electrónica  * Gestión conjunta solicitud cuenta emprendedor BancoEstado', 49990, 'ÚNICO'),
+    ('Domicilio tributario', '*Domicilio. Tributario, postal y comercial *Recepción de correspondencia fiscal *Escaneo de 1 página diaria de correspondencia fiscal no acumulable, sin costo *Uso 1 hora semanal de estación de trabajo *Inicio de actividades', 59990, 'ANUAL'),
+    ('Web mail + dominio', '*Servicio web mail corporativo 1 GB + dominio x 1 año', 14990, 'ANUAL'),
+    ('Contabilidad', NULL, NULL, NULL),
+    ('Bodega', '*Bodega: 1 Cubo rack para pañol, con acceso Lun a Vie de 10 a 16 horas. Es prohibido almacenar todo tipo de sustancias químicas y/o biológicas; explosivos; residuos contaminantes; combustibles líquidos; gases tóxicos.', 71388, 'ANUAL')
+ON CONFLICT (nombre) DO NOTHING;
+
 -- Reinicia las secuencias para que los próximos INSERT con ID autogenerado
 -- (SERIAL) no choquen con los IDs fijos insertados arriba.
 SELECT setval('rol_id_rol_seq', (SELECT MAX(id_rol) FROM rol));

@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.routers import auth, solicitudes, tramites, empresas
+from app.routers import auth, catalogos, solicitudes, tramites, empresas
 from app.seguridad import limiter
 
 app = FastAPI(
@@ -40,6 +40,7 @@ app.include_router(auth.router)
 app.include_router(solicitudes.router)
 app.include_router(tramites.router)
 app.include_router(empresas.router)
+app.include_router(catalogos.router)
 
 
 @app.get("/api/health")
