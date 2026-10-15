@@ -126,9 +126,40 @@ CREATE TABLE empresa (
 );
 
 -- =========================
+-- TABLA: sucursal
+-- (datos fijos de cada sucursal de Easy Office; van en el contrato. Las iniciales
+--  forman el folio, por ejemplo LF-01-2026)
+-- =========================
+CREATE TABLE sucursal (
+    id_sucursal    SERIAL PRIMARY KEY,
+    iniciales      VARCHAR(5) NOT NULL UNIQUE,
+    nombre         VARCHAR(100) NOT NULL,
+    direccion      VARCHAR(200) NOT NULL,
+    comuna         VARCHAR(100) NOT NULL,
+    region         VARCHAR(100) NOT NULL,
+    rol_propiedad  VARCHAR(30),
+    activa         BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+-- =========================
+-- TABLA: servicio_ofrecido
+-- (catalogo de lo que vende Easy Office, con precio y ciclo de pago de referencia.
+--  No es lo mismo que servicio_contratado, que son los tramites de la plataforma)
+-- =========================
+CREATE TABLE servicio_ofrecido (
+    id_servicio_ofrecido SERIAL PRIMARY KEY,
+    nombre               VARCHAR(150) NOT NULL UNIQUE,
+    descripcion          TEXT,
+    precio_referencia    INTEGER CHECK (precio_referencia IS NULL OR precio_referencia >= 0),
+    ciclo_pago_defecto   VARCHAR(20),
+    activo               BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+-- =========================
 -- TABLA: tramite
 -- (se crea únicamente cuando un agente confirma el pago y convierte
---  una solicitud_contacto; nunca se crea directo desde el sitio público)
+--  una solicitud_contacto; nunca se crea directo desde el sitio público.
+--  folio, id_sucursal y condiciones son las condiciones del contrato: las ingresa el agente)
 -- =========================
 CREATE TABLE tramite (
     id_tramite              SERIAL PRIMARY KEY,
@@ -137,6 +168,9 @@ CREATE TABLE tramite (
     id_usuario_responsable  INTEGER REFERENCES usuario(id_usuario),
     id_solicitud_origen     INTEGER REFERENCES solicitud_contacto(id_solicitud),
     id_empresa              INTEGER REFERENCES empresa(id_empresa),
+    id_sucursal             INTEGER REFERENCES sucursal(id_sucursal),
+    folio                   VARCHAR(20),
+    condiciones             JSONB,
     codigo_seguimiento      VARCHAR(8) NOT NULL UNIQUE,
     estado_actual           VARCHAR(30) NOT NULL DEFAULT 'generado',
     ruta_documento_generado VARCHAR(255),
@@ -145,6 +179,8 @@ CREATE TABLE tramite (
 );
 
 CREATE INDEX idx_tramite_codigo_seguimiento ON tramite(codigo_seguimiento);
+CREATE UNIQUE INDEX uq_tramite_folio ON tramite(folio);
+CREATE INDEX idx_tramite_id_sucursal ON tramite(id_sucursal);
 
 ALTER TABLE solicitud_contacto
     ADD CONSTRAINT fk_solicitud_tramite_generado

@@ -228,3 +228,29 @@ class TramitesResumenOut(BaseModel):
     kpis: TramitesKpisOut
     servicios: list[OpcionServicioOut]
     agentes: list[OpcionAgenteOut]
+
+
+# ---------- Catálogos para armar el contrato (panel de agentes) ----------
+
+class SucursalOut(BaseModel):
+    id_sucursal: int
+    iniciales: str
+    nombre: str
+    direccion: str
+    comuna: str
+    region: str
+    rol_propiedad: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ServicioOfrecidoOut(BaseModel):
+    id_servicio_ofrecido: int
+    nombre: str
+    descripcion: Optional[str] = None
+    precio_referencia: Optional[int] = None
+    ciclo_pago_defecto: Optional[str] = None
+
+    class Config:
+        from_attributes = True
