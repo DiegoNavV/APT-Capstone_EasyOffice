@@ -1,9 +1,10 @@
 """Esquemas Pydantic: login del panel y módulo solicitud_contacto / tramite (seguimiento)."""
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, EmailStr, Field, StrictBool, field_validator
+from pydantic import BaseModel, EmailStr, Field, StrictBool, field_validator, model_validator
 
+from app import condiciones
 from app.utils import normalizar_email, normalizar_rut
 
 
@@ -93,6 +94,7 @@ class SolicitudListadoOut(BaseModel):
     id_tramite_generado: Optional[int]
     # Solo viene cuando la solicitud ya fue convertida; el agente lo necesita para reenviarle el código al cliente si lo perdió.
     codigo_seguimiento: Optional[str]
+    folio: Optional[str] = None
     fecha_creacion: datetime
 
 
@@ -105,14 +107,67 @@ class NovedadesSolicitudesOut(BaseModel):
 
 # ---------- Conversión solicitud -> trámite (acción del agente) ----------
 
+class ServicioCondicionIn(BaseModel):
+    """
+    Un servicio del contrato. El agente decide solo precio y ciclo; el nombre y la descripción los copia el servidor desde el catálogo.
+    """
+    id_servicio_ofrecido: int = Field(ge=1)
+    precio: int = Field(ge=0, le=condiciones.PRECIO_MAXIMO)
+    ciclo_pago: str
+
+    @field_validator("ciclo_pago")
+    @classmethod
+    def ciclo_valido(cls, v):
+        ciclo = condiciones.normalizar_ciclo(v)
+        if ciclo not in condiciones.CICLOS_PAGO:
+            raise ValueError("Ciclo de pago no válido. Opciones: " + ", ".join(condiciones.CICLOS_PAGO) + ".")
+        return ciclo
+
+
+class CondicionesIn(BaseModel):
+    servicios: list[ServicioCondicionIn] = Field(min_length=1, max_length=condiciones.MAX_SERVICIOS)
+    duracion_meses: int
+    fecha_inicio: date
+    # Opcional: sin valor, el servidor lo calcula. Con valor se respeta (el agente puede corregirlo por feriados, días hábiles, etc.).
+    fecha_vencimiento: Optional[date] = None
+
+    @field_validator("duracion_meses")
+    @classmethod
+    def duracion_valida(cls, v):
+        if v not in condiciones.DURACIONES_MESES:
+            raise ValueError("Duración no válida. Opciones (meses): " + ", ".join(map(str, condiciones.DURACIONES_MESES)) + ".")
+        return v
+
+    @model_validator(mode="after")
+    def revisar_conjunto(self):
+        ids = [s.id_servicio_ofrecido for s in self.servicios]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Hay un servicio repetido en el contrato.")
+        if self.fecha_vencimiento is not None and self.fecha_vencimiento <= self.fecha_inicio:
+            raise ValueError("El vencimiento debe ser posterior a la fecha de inicio.")
+        return self
+
+
 class ConvertirSolicitudIn(BaseModel):
-    """Cuerpo OPCIONAL de la conversión. Sin cuerpo (o con id_empresa nulo) el trámite queda sin empresa vinculada, como hasta ahora; 
-    el vínculo siempre lo decide el agente, nunca el cliente."""
+    """
+    Cuerpo OPCIONAL de la conversión. Sin cuerpo (o con todo nulo) el trámite queda sin empresa, sin sucursal y sin condiciones, 
+    como hasta ahora; el panel es quien las pide siempre. Todo lo decide el agente, nunca el cliente.
+    """
     id_empresa: Optional[int] = Field(default=None, ge=1)
+    id_sucursal: Optional[int] = Field(default=None, ge=1)
+    condiciones: Optional[CondicionesIn] = None
+
+    @model_validator(mode="after")
+    def condiciones_requieren_sucursal(self):
+        if self.condiciones is not None and self.id_sucursal is None:
+            raise ValueError("Para fijar las condiciones del contrato hay que indicar la sucursal.")
+        return self
 
 
 class EmpresaOpcionOut(BaseModel):
-    """Lo mínimo para que el agente identifique una empresa en el panel. A propósito NO incluye `datos` (representante, domicilio, etc.)."""
+    """
+    Lo mínimo para que el agente identifique una empresa en el panel. A propósito NO incluye `datos` (representante, domicilio, etc.).
+    """
     id_empresa: int
     rut_empresa: str
     razon_social: str
@@ -126,6 +181,7 @@ class TramiteOut(BaseModel):
     codigo_seguimiento: str
     estado_actual: str
     nombre_servicio: str
+    folio: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -182,9 +238,10 @@ class SeguimientoOut(BaseModel):
 # ---------- Listado de trámites del panel (requiere login) ----------
 
 class ClienteListadoOut(BaseModel):
-    """Cliente tal como se muestra en el listado. Hoy son los datos de contacto
-    de quien pidió el trámite; cuando el cliente complete los datos de su
-    empresa, aquí saldrán la razón social y el RUT de la empresa."""
+    """
+    Cliente tal como se muestra en el listado. Hoy son los datos de contacto de quien pidió el trámite; cuando el cliente complete 
+    los datos de su empresa, aquí saldrán la razón social y el RUT de la empresa.
+    """
     nombre: str
     rut: Optional[str] = None
     datos_pendientes: bool  # True mientras no existan los datos de empresa
@@ -254,3 +311,11 @@ class ServicioOfrecidoOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+
+class OpcionesContratoOut(BaseModel):
+    """Valores permitidos para armar las condiciones; el panel los pide en vez de repetirlos."""
+    ciclos_pago: list[str]
+    duraciones_meses: list[int]
+    max_servicios: int
