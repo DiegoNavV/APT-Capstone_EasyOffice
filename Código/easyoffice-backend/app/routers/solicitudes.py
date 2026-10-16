@@ -66,12 +66,16 @@ def convertir_solicitud(
     db: Session = Depends(get_db),
     usuario: models.Usuario = Depends(get_usuario_actual),
 ):
-    """Uso del panel de agentes/admins (requiere login): confirma que el pago manual fue recibido y convierte la solicitud en 
+    """
+    Uso del panel de agentes/admins (requiere login): confirma que el pago manual fue recibido y convierte la solicitud en 
     un trámite real, generando el código de 8 caracteres que luego el agente entrega al cliente. El responsable del trámite es 
     siempre quien hace la conversión (la sesión); no se acepta otro desde la petición. Reasignar a otro agente, p. ej. por
     vacaciones o licencia, será una acción aparte, solo para administradores.
 
-    Cuerpo opcional {"id_empresa": N}: vincula el trámite a una empresa que ya existe. Sin cuerpo, el trámite queda sin empresa vinculada."""
+    Cuerpo opcional: "id_empresa" vincula el trámite a una empresa que ya existe; "id_sucursal" asigna sucursal y folio automático; 
+    "condiciones" fija los servicios, precios, ciclos, duración y fechas del contrato (exige sucursal).
+    Sin cuerpo, el trámite queda sin nada de eso.
+    """
     solicitud = crud.obtener_solicitud(db, id_solicitud)
     if not solicitud:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada.")
@@ -82,10 +86,22 @@ def convertir_solicitud(
         if not empresa:
             raise HTTPException(status_code=404, detail="La empresa indicada no existe.")
 
+    sucursal = None
+    if datos and datos.id_sucursal is not None:
+        sucursal = db.get(models.Sucursal, datos.id_sucursal)
+        if not sucursal or not sucursal.activa:
+            raise HTTPException(status_code=404, detail="La sucursal indicada no existe o no está activa.")
+
     try:
-        tramite = crud.convertir_solicitud_a_tramite(db, solicitud, usuario.id_usuario, empresa)
+        tramite = crud.convertir_solicitud_a_tramite(
+            db, solicitud, usuario.id_usuario, empresa,
+            sucursal=sucursal,
+            condiciones=datos.condiciones if datos else None,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except crud.ConflictoDeFolio as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except RuntimeError as e:
         # No se pudo generar un código único tras varios intentos: no es un
         # error del cliente, pero tampoco debe salir como 500 sin mensaje.
@@ -96,4 +112,5 @@ def convertir_solicitud(
         codigo_seguimiento=tramite.codigo_seguimiento,
         estado_actual=tramite.estado_actual,
         nombre_servicio=tramite.servicio.nombre,
+        folio=tramite.folio,
     )

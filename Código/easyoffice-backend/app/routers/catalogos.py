@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import models, schemas
+from app import condiciones, models, schemas
 from app.database import get_db
 from app.seguridad import get_usuario_actual
 
@@ -41,3 +41,17 @@ def listar_servicios_ofrecidos(
         .order_by(models.ServicioOfrecido.nombre)
     )
     return db.scalars(consulta).all()
+
+
+
+@router.get("/opciones-contrato", response_model=schemas.OpcionesContratoOut)
+def opciones_contrato(_usuario: models.Usuario = Depends(get_usuario_actual)):
+    """
+    Uso del panel de agentes/admins (requiere login): ciclos de pago, duraciones y máximo de servicios permitidos, para que el panel 
+    no los repita a mano.
+    """
+    return schemas.OpcionesContratoOut(
+        ciclos_pago=list(condiciones.CICLOS_PAGO),
+        duraciones_meses=list(condiciones.DURACIONES_MESES),
+        max_servicios=condiciones.MAX_SERVICIOS,
+    )

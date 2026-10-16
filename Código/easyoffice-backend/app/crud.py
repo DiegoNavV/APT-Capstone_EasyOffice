@@ -2,13 +2,13 @@
 (generando el código de 8 caracteres) y consultar un trámite por código.
 """
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, contains_eager, joinedload
 
-from app import campos_servicio, enmascarado, models, schemas
+from app import campos_servicio, condiciones as reglas_condiciones, enmascarado, models, schemas
 from app.utils import normalizar_rut
 
 ESTADOS_DOCUMENTO_DISPONIBLE = {"firmado", "entregado"}
@@ -48,8 +48,9 @@ def listar_solicitudes(
     limit: int = 50,
     offset: int = 0,
 ) -> list[schemas.SolicitudListadoOut]:
-    """Solicitudes de contacto, las más recientes primero. Para cada una ya
-    convertida incluye el código de seguimiento de su trámite."""
+    """
+    Solicitudes de contacto, las más recientes primero. Para cada una ya convertida incluye el código de seguimiento de su trámite.
+    """
     consulta = db.query(models.SolicitudContacto)
     if estado:
         consulta = consulta.filter(models.SolicitudContacto.estado == estado)
@@ -67,13 +68,15 @@ def listar_solicitudes(
     # Una sola consulta extra para todos los códigos (evita N+1).
     ids_tramite = [s.id_tramite_generado for s in solicitudes if s.id_tramite_generado]
     codigos: dict[int, str] = {}
+    folios: dict[int, str | None] = {}
     if ids_tramite:
         filas = (
-            db.query(models.Tramite.id_tramite, models.Tramite.codigo_seguimiento)
+            db.query(models.Tramite.id_tramite, models.Tramite.codigo_seguimiento, models.Tramite.folio)
             .filter(models.Tramite.id_tramite.in_(ids_tramite))
             .all()
         )
         codigos = {fila.id_tramite: fila.codigo_seguimiento for fila in filas}
+        folios = {fila.id_tramite: fila.folio for fila in filas}
 
     return [
         schemas.SolicitudListadoOut(
@@ -88,6 +91,7 @@ def listar_solicitudes(
             nombre_servicio=s.servicio.nombre if s.servicio else None,
             id_tramite_generado=s.id_tramite_generado,
             codigo_seguimiento=codigos.get(s.id_tramite_generado),
+            folio=folios.get(s.id_tramite_generado),
             fecha_creacion=s.fecha_creacion,
         )
         for s in solicitudes
@@ -132,23 +136,71 @@ def _generar_codigo_unico(db: Session) -> str:
     # Extremadamente improbable con 31^8 combinaciones, pero no lo dejamos colgado.
     raise RuntimeError("No se pudo generar un código de seguimiento único. Intenta nuevamente.")
 
+class ConflictoDeFolio(Exception):
+    """Dos conversiones calcularon el mismo folio a la vez. No se guardó nada;
+    basta con reintentar."""
+
+
+def _armar_condiciones(
+    db: Session, datos: schemas.CondicionesIn
+) -> dict:
+    """Valida contra el catálogo y arma el JSON que se guarda en el trámite.
+    Nombre y descripción se copian del catálogo: si Easy Office lo cambia después,
+    los contratos ya hechos no cambian."""
+    servicios = []
+    for item in datos.servicios:
+        servicio = db.get(models.ServicioOfrecido, item.id_servicio_ofrecido)
+        if not servicio or not servicio.activo:
+            raise ValueError(f"El servicio {item.id_servicio_ofrecido} no existe o no está activo en el catálogo.")
+        servicios.append({
+            "id_servicio_ofrecido": servicio.id_servicio_ofrecido,
+            "nombre": servicio.nombre,
+            "descripcion": servicio.descripcion,
+            "precio": item.precio,
+            "ciclo_pago": item.ciclo_pago,
+        })
+
+    calculado = reglas_condiciones.calcular_vencimiento(datos.fecha_inicio, datos.duracion_meses)
+    vencimiento = datos.fecha_vencimiento or calculado
+    return {
+        "servicios": servicios,
+        "duracion_meses": datos.duracion_meses,
+        "fecha_inicio": datos.fecha_inicio.isoformat(),
+        "fecha_vencimiento": vencimiento.isoformat(),
+        # True si el agente corrigió a mano la fecha que proponía el sistema.
+        "vencimiento_manual": vencimiento != calculado,
+    }
+
+
 def convertir_solicitud_a_tramite(
     db: Session,
     solicitud: models.SolicitudContacto,
     id_usuario_responsable: int,
     empresa: models.Empresa | None = None,
+    sucursal: models.Sucursal | None = None,
+    condiciones: schemas.CondicionesIn | None = None,
 ) -> models.Tramite:
     """Confirma el pago manual de una solicitud y la convierte en un trámite real, generando su código de seguimiento. Acción exclusiva 
     de un agente/admin: el responsable es siempre quien la ejecuta (lo valida get_usuario_actual en el router, por eso aquí no se 
     vuelve a comprobar que exista).
 
     `empresa` es opcional: si el agente la indica, el trámite queda vinculado a ella y reutilizará sus datos ya guardados. El router 
-    es quien comprueba que exista; aquí solo se vincula."""
+    es quien comprueba que exista; aquí solo se vincula.
+
+    `sucursal` (que el router ya comprobó) asigna además el folio automático. `condiciones` (precios, ciclos, duración y fechas) se
+    valida contra el catálogo y se guarda en el trámite; exige sucursal.
+
+    Lanza ValueError (datos inválidos), ConflictoDeFolio (reintentar) o RuntimeError (sin código único)."""
 
     if solicitud.estado == "convertido":
         raise ValueError("Esta solicitud ya fue convertida en un trámite.")
     if not solicitud.id_servicio:
         raise ValueError("La solicitud no tiene un servicio definido; no se puede convertir.")
+    if condiciones is not None and sucursal is None:
+        raise ValueError("Para fijar las condiciones del contrato hay que indicar la sucursal.")
+
+    # Se valida antes de tocar la base: si algo falla, no queda nada a medias.
+    condiciones_json = _armar_condiciones(db, condiciones) if condiciones is not None else None
 
     # El cliente no tiene cuenta; se busca o se crea por RUT (ya normalizado por
     # el schema al crear la solicitud) para no duplicarlo si ya había hecho una
@@ -166,32 +218,47 @@ def convertir_solicitud_a_tramite(
         db.add(cliente)
         db.flush()  # para obtener id_cliente sin cerrar la transacción
 
-    tramite = models.Tramite(
-        id_cliente=cliente.id_cliente,
-        id_servicio=solicitud.id_servicio,
-        id_usuario_responsable=id_usuario_responsable,
-        id_solicitud_origen=solicitud.id_solicitud,
-        id_empresa=empresa.id_empresa if empresa else None,
-        codigo_seguimiento=_generar_codigo_unico(db),
-        estado_actual="generado",
-    )
-    db.add(tramite)
-    db.flush()
-    
-    comentario = "Trámite generado al confirmar el pago de la solicitud de contacto."
-    if empresa:
-        comentario += f" Vinculado a la empresa {empresa.razon_social} ({empresa.rut_empresa})."
-    db.add(models.HistorialEstado(
-        id_tramite=tramite.id_tramite,
-        estado="generado",
-        comentario=comentario,
-        id_usuario=id_usuario_responsable,
-    ))
+    folio = None
+    if sucursal is not None:
+        folio = reglas_condiciones.siguiente_folio(db, sucursal, date.today().year)
 
-    solicitud.estado = "convertido"
-    solicitud.id_tramite_generado = tramite.id_tramite
+    try:
+        tramite = models.Tramite(
+            id_cliente=cliente.id_cliente,
+            id_servicio=solicitud.id_servicio,
+            id_usuario_responsable=id_usuario_responsable,
+            id_solicitud_origen=solicitud.id_solicitud,
+            id_empresa=empresa.id_empresa if empresa else None,
+            id_sucursal=sucursal.id_sucursal if sucursal else None,
+            folio=folio,
+            condiciones=condiciones_json,
+            codigo_seguimiento=_generar_codigo_unico(db),
+            estado_actual="generado",
+        )
+        db.add(tramite)
+        db.flush()
 
-    db.commit()
+        comentario = "Trámite generado al confirmar el pago de la solicitud de contacto."
+        if empresa:
+            comentario += f" Vinculado a la empresa {empresa.razon_social} ({empresa.rut_empresa})."
+        if sucursal:
+            comentario += f" Sucursal {sucursal.nombre}, folio {folio}."
+        db.add(models.HistorialEstado(
+            id_tramite=tramite.id_tramite,
+            estado="generado",
+            comentario=comentario,
+            id_usuario=id_usuario_responsable,
+        ))
+
+        solicitud.estado = "convertido"
+        solicitud.id_tramite_generado = tramite.id_tramite
+
+        db.commit()
+    except IntegrityError:
+        # Lo único que puede chocar aquí es el folio (el código ya se verificó):
+        # otro agente tomó ese número en el mismo instante.
+        db.rollback()
+        raise ConflictoDeFolio("Otro agente generó un folio al mismo tiempo. Intenta nuevamente.")
     db.refresh(tramite)
     return tramite
 

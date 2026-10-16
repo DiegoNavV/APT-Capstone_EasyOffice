@@ -4,6 +4,7 @@ import { ApiError } from '../lib/api.js'
 import { convertirSolicitud, listarSolicitudes } from '../lib/solicitudesApi.js'
 import { useNovedadesSolicitudes } from '../lib/useNovedadesSolicitudes.js'
 import PaginaPanel from '../components/PaginaPanel.jsx'
+import CondicionesContrato from '../components/CondicionesContrato.jsx'
 import SelectorEmpresa, { textoEmpresa } from '../components/SelectorEmpresa.jsx'
 
 // Solicitudes que llegan desde el formulario "Contrata aquí" del sitio público.
@@ -36,9 +37,20 @@ function Dato({ etiqueta, valor }) {
   )
 }
 
+// La autorización de domicilio tributario solo necesita la sucursal; el contrato de servicio (y cualquier otro servicio) pide además 
+// las condiciones. Se decide por el nombre del servicio de interés que ya trae la solicitud.
+function soloPideSucursal(nombreServicio) {
+  return /autorizaci[oó]n/i.test(nombreServicio || '')
+}
+
+const CONTRATO_PENDIENTE = { error: 'Cargando las opciones del contrato…', idSucursal: null, condiciones: null }
+
 function TarjetaSolicitud({ solicitud, accessToken, onConvertir, onSesionVencida }) {
   const [confirmando, setConfirmando] = useState(false)
+  // Empresa existente a la que el agente decide vincular el trámite (null = sin empresa).
   const [empresa, setEmpresa] = useState(null)
+  // Sucursal y condiciones que arma CondicionesContrato (error != '' = todavía no se puede convertir).
+  const [contrato, setContrato] = useState(CONTRATO_PENDIENTE)
   const [convirtiendo, setConvirtiendo] = useState(false)
   const [errorConversion, setErrorConversion] = useState('')
   const [copiado, setCopiado] = useState(false)
@@ -50,7 +62,11 @@ function TarjetaSolicitud({ solicitud, accessToken, onConvertir, onSesionVencida
     setConvirtiendo(true)
     setErrorConversion('')
     try {
-      await onConvertir(solicitud, empresa?.id_empresa)
+      await onConvertir(solicitud, {
+        idEmpresa: empresa?.id_empresa,
+        idSucursal: contrato.idSucursal,
+        condiciones: contrato.condiciones
+      })
       setConfirmando(false)
     } catch (e) {
       setErrorConversion(e instanceof ApiError ? e.message : 'No se pudo conectar con el servidor.')
@@ -115,6 +131,12 @@ function TarjetaSolicitud({ solicitud, accessToken, onConvertir, onSesionVencida
             >
               {copiado ? '¡Copiado!' : 'Copiar código'}
             </button>
+            {solicitud.folio && (
+              <div className="sm:ml-6">
+                <p className="text-xs text-ink-muted">Folio</p>
+                <p className="font-mono text-lg font-semibold text-ink-primary">{solicitud.folio}</p>
+              </div>
+            )}
           </div>
         ) : confirmando ? (
           <div>
@@ -138,11 +160,20 @@ function TarjetaSolicitud({ solicitud, accessToken, onConvertir, onSesionVencida
               </p>
             )}
 
+            <CondicionesContrato
+              idSolicitud={solicitud.id_solicitud}
+              accessToken={accessToken}
+              soloSucursal={soloPideSucursal(solicitud.nombre_servicio)}
+              onSesionVencida={onSesionVencida}
+              onCambio={setContrato}
+              deshabilitado={convirtiendo}
+            />
+
             <div className="mt-3 flex items-center gap-3">
               <button
                 type="button"
                 onClick={confirmar}
-                disabled={convirtiendo}
+                disabled={convirtiendo || contrato.error !== ''}
                 className="bg-brand-primary hover:bg-brand-dark disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold px-5 py-2.5 rounded-[10px] transition-colors"
               >
                 {convirtiendo ? 'Generando código…' : 'Sí, generar código'}
@@ -152,6 +183,7 @@ function TarjetaSolicitud({ solicitud, accessToken, onConvertir, onSesionVencida
                 onClick={() => {
                   setConfirmando(false)
                   setEmpresa(null)
+                  setContrato(CONTRATO_PENDIENTE)
                   setErrorConversion('')
                 }}
                 disabled={convirtiendo}
@@ -160,6 +192,9 @@ function TarjetaSolicitud({ solicitud, accessToken, onConvertir, onSesionVencida
                 Cancelar
               </button>
             </div>
+            {contrato.error && !convirtiendo && (
+              <p className="mt-2 text-xs text-ink-muted">{contrato.error}</p>
+            )}
           </div>
         ) : (
           <div>
@@ -225,8 +260,7 @@ export default function Solicitudes() {
     setCargando(true)
     setError('')
 
-    // Se pide una fila de más para saber si existe una página siguiente sin
-    // necesitar un total desde el backend.
+    // Se pide una fila de más para saber si existe una página siguiente sin necesitar un total desde el backend.
     listarSolicitudes({
       accessToken,
       estado: filtro,
@@ -252,12 +286,14 @@ export default function Solicitudes() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [haySesion, listo, filtro, pagina, recarga])
 
-  async function convertir(solicitud, idEmpresa) {
+  async function convertir(solicitud, { idEmpresa, idSucursal, condiciones }) {
     try {
       const tramite = await convertirSolicitud({
         accessToken,
         idSolicitud: solicitud.id_solicitud,
-        idEmpresa
+        idEmpresa,
+        idSucursal,
+        condiciones
       })
       setItems((prev) =>
         prev.map((s) =>
@@ -266,7 +302,8 @@ export default function Solicitudes() {
                 ...s,
                 estado: 'convertido',
                 id_tramite_generado: tramite.id_tramite,
-                codigo_seguimiento: tramite.codigo_seguimiento
+                codigo_seguimiento: tramite.codigo_seguimiento,
+                folio: tramite.folio
               }
             : s
         )
@@ -285,15 +322,14 @@ export default function Solicitudes() {
     setPagina(0)
   }
 
-  // "Actualizar" y "Reintentar": nuevo punto de partida y se vuelve a pedir la
-  // lista (mismo filtro y página).
+  // "Actualizar" y "Reintentar": nuevo punto de partida y se vuelve a pedir la lista (mismo filtro y página).
   async function recargar() {
     await reiniciar()
     setRecarga((n) => n + 1)
   }
 
-  // Clic en el aviso de solicitudes nuevas: vuelve a "Todas" y a la página 1
-  // para que las nuevas (que nacen pendientes) siempre queden a la vista.
+  // Clic en el aviso de solicitudes nuevas: vuelve a "Todas" y a la página 1 para que las nuevas (que nacen pendientes) siempre queden 
+  // a la vista.
   async function verNuevas() {
     await reiniciar()
     setFiltro('')
@@ -310,8 +346,8 @@ export default function Solicitudes() {
         ? 'Todavía no hay solicitudes convertidas.'
         : 'Todavía no han llegado solicitudes desde el sitio.'
 
-  // El aviso va en el encabezado (que no se desplaza) para que, al aparecer, la
-  // lista que el agente está leyendo no se mueva. La lista solo cambia si él hace clic.
+  // El aviso va en el encabezado (que no se desplaza) para que, al aparecer, la lista que el agente está leyendo no se mueva. 
+  // La lista solo cambia si él hace clic.
   const accionesEncabezado = (
     <>
       <span role="status" aria-live="polite" className="contents">
@@ -375,7 +411,13 @@ export default function Solicitudes() {
         ) : (
           <div className={`space-y-4 ${cargando ? 'opacity-60' : ''}`}>
             {items.map((s) => (
-              <TarjetaSolicitud key={s.id_solicitud} solicitud={s} accessToken={accessToken} onConvertir={convertir} onSesionVencida={cerrarSesion}/>
+              <TarjetaSolicitud
+                key={s.id_solicitud}
+                solicitud={s}
+                accessToken={accessToken}
+                onConvertir={convertir}
+                onSesionVencida={cerrarSesion}
+              />
             ))}
           </div>
         )}
