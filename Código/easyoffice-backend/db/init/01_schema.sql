@@ -84,8 +84,17 @@ CREATE TABLE plantilla_documento (
     version         VARCHAR(20) NOT NULL DEFAULT '1.0',
     ruta_archivo    VARCHAR(255) NOT NULL,
     activa          BOOLEAN NOT NULL DEFAULT TRUE,
-    fecha_creacion  TIMESTAMP NOT NULL DEFAULT now()
+    fecha_creacion  TIMESTAMP NOT NULL DEFAULT now(),
+    nombre_original  VARCHAR(255),
+    hash_sha256      VARCHAR(64),
+    tamano_bytes     INTEGER,
+    marcas           JSONB,
+    id_usuario_subio INTEGER REFERENCES usuario(id_usuario)
 );
+
+-- Cada subida es una version nueva (no se borra ninguna) y solo una puede estar activa por servicio.
+CREATE UNIQUE INDEX uq_plantilla_servicio_version ON plantilla_documento(id_servicio, version);
+CREATE UNIQUE INDEX uq_plantilla_activa_por_servicio ON plantilla_documento(id_servicio) WHERE activa;
 
 -- =========================
 -- TABLA: solicitud_contacto
