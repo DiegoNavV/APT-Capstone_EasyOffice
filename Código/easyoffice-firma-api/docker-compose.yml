@@ -9,7 +9,8 @@
 # compartida "easyoffice-net" con el nombre "firma-api":
 #   CRM -> API:      http://firma-api:8000/api/v1/...
 #   API -> CRM (webhooks, Fase 5): http://backend:8000/...
-# El compose del CRM debe declarar esa red como externa (se explica en el README).
+# La red es externa en ambos compose: se crea una vez con
+#   docker network create easyoffice-net
 
 x-api-env: &api-env
   APP_ENV: ${APP_ENV:-development}
@@ -24,7 +25,7 @@ x-api-env: &api-env
   S3_BUCKET_DOCUMENTS: firma-documents
   SMTP_HOST: mailpit
   SMTP_PORT: "1025"
-  MASTER_KEY_HEX: ${MASTER_KEY_HEX:-dev-inseguro-cambiar}
+  MASTER_KEY_HEX: ${MASTER_KEY_HEX:-00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff}
   TOKEN_PEPPER: ${TOKEN_PEPPER:-dev-inseguro-cambiar}
   FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
 
@@ -118,6 +119,8 @@ volumes:
 
 networks:
   default: {}
-  # Red compartida con el CRM. Este compose la crea con un nombre fijo.
+  # Red compartida con el CRM. La crea una sola vez quien levante primero:
+  #   docker network create easyoffice-net
+  # Así ningún compose depende del orden de arranque del otro.
   easyoffice-net:
-    name: easyoffice-net
+    external: true

@@ -1,3 +1,5 @@
+import logging
+
 from app.core.middleware import SECURITY_HEADERS
 
 
@@ -40,3 +42,35 @@ class TestCors:
             headers={"Origin": "http://evil.example", "Access-Control-Request-Method": "GET"},
         )
         assert "access-control-allow-origin" not in resp.headers
+
+
+class TestLogDeAcceso:
+    """Revisión de Diego (PR #31): la URL con query string no debe llegar a los logs."""
+
+    def test_no_registra_query_string(self, client, caplog):
+        caplog.set_level(logging.INFO, logger="firma.access")
+        client.get("/api/v1/health?email=juan.perez@empresa.cl&token=fk_live_abc123")
+        lineas = [r.getMessage() for r in caplog.records if r.name == "firma.access"]
+        assert any("GET /api/v1/health 200" in linea for linea in lineas)
+        texto = caplog.text
+        assert "juan.perez" not in texto
+        assert "fk_live_abc123" not in texto
+        assert "token=" not in texto
+
+
+def test_entrypoint_desactiva_log_de_acceso_de_uvicorn():
+    from pathlib import Path
+
+    script = (Path(__file__).resolve().parent.parent / "scripts" / "entrypoint.sh").read_text(encoding="utf-8")
+    lineas_uvicorn = [linea for linea in script.splitlines() if linea.strip().startswith("exec uvicorn")]
+    assert len(lineas_uvicorn) == 2
+    assert all("--no-access-log" in linea for linea in lineas_uvicorn)
+
+
+def test_red_compartida_es_externa():
+    from pathlib import Path
+
+    import yaml
+
+    compose = yaml.safe_load((Path(__file__).resolve().parent.parent / "docker-compose.yml").read_text(encoding="utf-8"))
+    assert compose["networks"]["easyoffice-net"] == {"external": True}

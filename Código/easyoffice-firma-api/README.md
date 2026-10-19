@@ -69,6 +69,7 @@ Requisito: Docker Desktop.
 ```bash
 cd Código/easyoffice-firma-api
 cp .env.example .env          # en CMD de Windows: copy .env.example .env
+docker network create easyoffice-net   # solo la primera vez (red compartida con el CRM)
 docker compose up --build
 ```
 
@@ -81,7 +82,9 @@ es el propio contenedor del CRM, no tu computador, así que **no** sirve
 `http://localhost:8100`. Por eso esta API crea la red Docker compartida
 `easyoffice-net` y se publica en ella con el nombre `firma-api`.
 
-1. Levantar **primero** esta API (crea la red).
+1. Crear la red **una sola vez** (cualquiera de los dos equipos):
+   `docker network create easyoffice-net`. Ambos compose la declaran como
+   externa, así que no importa cuál se levante primero.
 2. En el `docker-compose.yml` del CRM, agregar la red al servicio `backend`:
 
    ```yaml
@@ -141,6 +144,9 @@ que cambia esta carpeta.
 - `X-Forwarded-For` solo se acepta de los proxies en `FORWARDED_ALLOW_IPS`:
   la IP del firmante es evidencia y no debe poder falsificarse.
 - Tiempos de espera acotados al consultar base de datos, Redis y MinIO.
+- Log de acceso propio sin query string (el de uvicorn está desactivado con
+  `--no-access-log`). Regla: ningún token ni API key viaja en la URL.
+- `MASTER_KEY_HEX` se valida (64 caracteres hex) en todos los entornos.
 
 ## Plan por fases
 

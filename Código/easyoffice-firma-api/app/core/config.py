@@ -9,11 +9,15 @@ Reglas:
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Valor marcador para secretos de desarrollo. Si llega a producción, se rechaza.
 DEV_SECRET = "dev-inseguro-cambiar"
+# Clave maestra SOLO para desarrollo: hex válido de 64 caracteres, para que el
+# cifrado AES-256-GCM funcione igual que en producción. Es pública (está en el
+# repo), por eso en producción se rechaza.
+DEV_MASTER_KEY_HEX = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 
 
 class Settings(BaseSettings):
@@ -54,7 +58,7 @@ class Settings(BaseSettings):
     # ---------- Secretos de la plataforma ----------
     # Clave maestra para cifrar secretos en reposo (AES-256-GCM): 32 bytes en
     # hex (64 caracteres). Generar con: python -c "import secrets;print(secrets.token_hex(32))"
-    master_key_hex: str = DEV_SECRET
+    master_key_hex: str = DEV_MASTER_KEY_HEX
     # Pimienta para el hash de API keys y tokens de firma.
     token_pepper: str = DEV_SECRET
 
@@ -64,26 +68,35 @@ class Settings(BaseSettings):
     # Días por defecto antes de que un documento sin firmar expire.
     document_default_expiration_days: int = Field(default=30, ge=1)
 
+    @field_validator("master_key_hex")
+    @classmethod
+    def _master_key_formato(cls, v: str) -> str:
+        """En TODOS los entornos: 32 bytes en hex (64 caracteres)."""
+        v = v.strip().lower()
+        if len(v) != 64:
+            raise ValueError("MASTER_KEY_HEX debe tener 64 caracteres hex (32 bytes).")
+        try:
+            bytes.fromhex(v)
+        except ValueError as exc:
+            raise ValueError("MASTER_KEY_HEX no es hexadecimal válido.") from exc
+        return v
+
     @model_validator(mode="after")
     def _validar_secretos_en_produccion(self) -> "Settings":
         if self.app_env != "production":
             return self
         con_valor_dev = [
             nombre
-            for nombre in ("s3_secret_key", "master_key_hex", "token_pepper")
+            for nombre in ("s3_secret_key", "token_pepper")
             if getattr(self, nombre) == DEV_SECRET
         ]
+        if self.master_key_hex == DEV_MASTER_KEY_HEX:
+            con_valor_dev.append("master_key_hex")
         if con_valor_dev:
             raise ValueError(
                 "En producción estos secretos deben definirse por variable de entorno: "
                 + ", ".join(sorted(con_valor_dev))
             )
-        if len(self.master_key_hex) != 64:
-            raise ValueError("MASTER_KEY_HEX debe tener 64 caracteres hex (32 bytes).")
-        try:
-            bytes.fromhex(self.master_key_hex)
-        except ValueError as exc:
-            raise ValueError("MASTER_KEY_HEX no es hexadecimal válido.") from exc
         return self
 
     @property

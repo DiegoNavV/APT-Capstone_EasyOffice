@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import health
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging
-from app.core.middleware import RequestIdMiddleware, SecurityHeadersMiddleware
+from app.core.middleware import AccessLogMiddleware, RequestIdMiddleware, SecurityHeadersMiddleware
 
 logger = logging.getLogger("firma.api")
 
@@ -42,6 +42,8 @@ def create_app() -> FastAPI:
             allow_methods=["GET", "POST", "DELETE"],
             allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID"],
         )
+    # Dentro de RequestIdMiddleware, para que cada línea del log lleve su request_id.
+    app.add_middleware(AccessLogMiddleware)
     app.add_middleware(RequestIdMiddleware)
 
     app.include_router(health.router, prefix=settings.api_prefix)

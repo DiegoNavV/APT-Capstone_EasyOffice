@@ -1,5 +1,7 @@
-"""Middlewares transversales: id de petición y headers de seguridad."""
+"""Middlewares transversales: id de petición, log de acceso y headers de seguridad."""
+import logging
 import re
+import time
 import uuid
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -38,6 +40,32 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
             request_id_var.reset(token)
         response.headers["X-Request-ID"] = request_id
         return response
+
+
+_access_logger = logging.getLogger("firma.access")
+
+
+class AccessLogMiddleware(BaseHTTPMiddleware):
+    """Log de acceso propio: método, ruta SIN query string, estado y duración.
+
+    Reemplaza al log de acceso de uvicorn (desactivado con --no-access-log), que
+    escribía la URL completa sin pasar por el filtro de datos sensibles."""
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        inicio = time.perf_counter()
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        finally:
+            _access_logger.info(
+                "%s %s %s %.0fms",
+                request.method,
+                request.url.path,  # nunca request.url completa: la query puede traer datos privados
+                status_code,
+                (time.perf_counter() - inicio) * 1000,
+            )
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):

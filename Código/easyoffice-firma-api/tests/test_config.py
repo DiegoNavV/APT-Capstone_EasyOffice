@@ -3,7 +3,7 @@ import secrets
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import DEV_SECRET, Settings
+from app.core.config import DEV_MASTER_KEY_HEX, DEV_SECRET, Settings
 
 CLAVE_VALIDA = secrets.token_hex(32)
 
@@ -43,10 +43,32 @@ class TestSecretosEnProduccion:
         s = Settings(
             app_env="development",
             s3_secret_key=DEV_SECRET,
-            master_key_hex=DEV_SECRET,
+            master_key_hex=DEV_MASTER_KEY_HEX,
             token_pepper=DEV_SECRET,
         )
-        assert s.master_key_hex == DEV_SECRET
+        assert s.master_key_hex == DEV_MASTER_KEY_HEX
+
+    def test_produccion_rechaza_master_key_de_desarrollo(self):
+        with pytest.raises(ValidationError) as err:
+            _prod(master_key_hex=DEV_MASTER_KEY_HEX)
+        assert "master_key_hex" in str(err.value)
+
+
+class TestMasterKeyEnTodosLosEntornos:
+    """Revisión de Diego (PR #31): el formato se valida también en desarrollo,
+    para que el cifrado AES-256-GCM no falle solo fuera de producción."""
+
+    def test_clave_de_desarrollo_es_hex_valido(self):
+        assert len(bytes.fromhex(DEV_MASTER_KEY_HEX)) == 32
+
+    @pytest.mark.parametrize("entorno", ["development", "test", "production"])
+    @pytest.mark.parametrize("clave", [DEV_SECRET, "abcd", "z" * 64])
+    def test_rechaza_formato_invalido(self, entorno, clave):
+        with pytest.raises(ValidationError):
+            Settings(app_env=entorno, master_key_hex=clave)
+
+    def test_normaliza_mayusculas(self):
+        assert Settings(master_key_hex="AB" * 32).master_key_hex == "ab" * 32
 
 
 class TestParametros:
