@@ -319,3 +319,36 @@ class OpcionesContratoOut(BaseModel):
     ciclos_pago: list[str]
     duraciones_meses: list[int]
     max_servicios: int
+
+
+# ---------- Plantillas de documentos ----------
+
+class PlantillaOut(BaseModel):
+    id_plantilla: int
+    id_servicio: int
+    nombre_servicio: str
+    nombre: str
+    version: str
+    activa: bool
+    fecha_creacion: datetime
+    nombre_original: Optional[str] = None
+    tamano_bytes: Optional[int] = None
+    hash_sha256: Optional[str] = None
+    marcas: list[str] = []
+    subida_por: Optional[str] = None
+
+
+class MarcaOut(BaseModel):
+    nombre: str
+    descripcion: str
+
+
+class ConfiguracionPlantillasOut(BaseModel):
+    """
+    Lo que necesita el panel para dibujar la pantalla. `puede_gestionar` es false para quienes no tienen permiso 
+    (el panel oculta la gestión).
+    """
+    puede_gestionar: bool
+    max_tamano_mb: int
+    servicios: list[dict[str, Any]]
+    marcas: list[MarcaOut]

@@ -9,3 +9,5 @@ httpx==0.27.2
 pyjwt==2.10.1
 argon2-cffi==23.1.0
 slowapi==0.1.9
+# Subida de archivos (plantillas de documentos)
+python-multipart==0.0.26

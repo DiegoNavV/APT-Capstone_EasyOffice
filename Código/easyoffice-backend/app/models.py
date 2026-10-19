@@ -7,8 +7,7 @@ Modelos SQLAlchemy. Deben coincidir con db/init/01_schema.sql.
   - Datos que el cliente entrega con su código: empresa, datos_empresa_tramite
 """
 from sqlalchemy import (
-    JSON, CheckConstraint, Column, Integer, String, Text, Boolean, TIMESTAMP,
-    ForeignKey, func
+    JSON, CheckConstraint, Column, Index, Integer, String, Text, Boolean, TIMESTAMP, ForeignKey, func
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
@@ -208,3 +207,39 @@ class HistorialEstado(Base):
     comentario = Column(Text)
     id_usuario = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=True)
     fecha = Column(TIMESTAMP, server_default=func.now())
+
+
+
+
+class PlantillaDocumento(Base):
+    """
+    Una versión de la plantilla Word de un servicio (contrato, autorización...).
+    Las versiones nunca se borran: subir un archivo crea una versión nueva y la anterior queda guardada. Solo una versión por servicio 
+    puede estar activa (índice único parcial). El archivo vive fuera de la base, en PLANTILLAS_DIR;
+    aquí solo se guarda su ruta relativa.
+    """
+
+    __tablename__ = "plantilla_documento"
+    __table_args__ = (
+        Index("uq_plantilla_servicio_version", "id_servicio", "version", unique=True),
+        Index(
+            "uq_plantilla_activa_por_servicio", "id_servicio", unique=True,
+            postgresql_where=Column("activa"), sqlite_where=Column("activa"),
+        ),
+    )
+
+    id_plantilla = Column(Integer, primary_key=True, index=True)
+    id_servicio = Column(Integer, ForeignKey("servicio_contratado.id_servicio"), nullable=False)
+    nombre = Column(String(150), nullable=False)
+    version = Column(String(20), nullable=False, default="1")
+    ruta_archivo = Column(String(255), nullable=False)
+    activa = Column(Boolean, nullable=False, default=True)
+    fecha_creacion = Column(TIMESTAMP, nullable=False, server_default=func.now())
+    nombre_original = Column(String(255))
+    hash_sha256 = Column(String(64))
+    tamano_bytes = Column(Integer)
+    marcas = Column(JSON().with_variant(JSONB(), "postgresql"))
+    id_usuario_subio = Column(Integer, ForeignKey("usuario.id_usuario"))
+
+    servicio = relationship("ServicioContratado")
+    usuario_subio = relationship("Usuario")
