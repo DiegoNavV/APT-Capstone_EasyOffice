@@ -1,14 +1,15 @@
 """Punto de entrada de la API de firma electrónica (FES) para pruebas del CRM.
 
-Fase 0: esqueleto. Solo expone health checks; los módulos de organizaciones,
-documentos, firma, webhooks y verificación se agregan en las fases siguientes.
+Versión de pruebas: documentos, firma electrónica simple del cliente, firma
+automática de la organización (sello PAdES), webhooks y verificación por hash.
+La gestión de organizaciones y API keys en base de datos es la Fase 1.
 """
 import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import health
+from app.api.v1 import documents, health, verify
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging
 from app.core.middleware import AccessLogMiddleware, RequestIdMiddleware, SecurityHeadersMiddleware
@@ -47,6 +48,8 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestIdMiddleware)
 
     app.include_router(health.router, prefix=settings.api_prefix)
+    app.include_router(documents.router, prefix=settings.api_prefix)
+    app.include_router(verify.router, prefix=settings.api_prefix)
 
     logger.info("API iniciada (env=%s)", settings.app_env)
     return app

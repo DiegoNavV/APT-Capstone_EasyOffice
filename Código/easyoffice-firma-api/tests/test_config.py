@@ -14,6 +14,8 @@ def _prod(**kwargs) -> Settings:
         "s3_secret_key": "s3-real",
         "master_key_hex": CLAVE_VALIDA,
         "token_pepper": "pimienta-real",
+        "webhook_secret": "secreto-webhook-real",
+        "api_keys": "fk_live_clave-real",
     }
     base.update(kwargs)
     return Settings(**base)
@@ -23,11 +25,15 @@ class TestSecretosEnProduccion:
     def test_produccion_con_secretos_reales_arranca(self):
         assert _prod().app_env == "production"
 
-    @pytest.mark.parametrize("campo", ["s3_secret_key", "master_key_hex", "token_pepper"])
+    @pytest.mark.parametrize("campo", ["s3_secret_key", "master_key_hex", "token_pepper", "webhook_secret"])
     def test_produccion_rechaza_secreto_de_desarrollo(self, campo):
         with pytest.raises(ValidationError) as err:
             _prod(**{campo: DEV_SECRET})
         assert campo in str(err.value)
+
+    def test_produccion_rechaza_api_key_de_desarrollo(self):
+        with pytest.raises(ValidationError):
+            _prod(api_keys="fk_test_dev-inseguro-cambiar")
 
     def test_master_key_largo_incorrecto(self):
         with pytest.raises(ValidationError):
