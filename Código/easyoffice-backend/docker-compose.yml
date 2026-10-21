@@ -29,6 +29,14 @@ services:
       # Quién puede gestionar plantillas. Por defecto solo "administrador".
       # Para sumar a los agentes: ROLES_GESTORES_PLANTILLAS="administrador,agente" en el .env.
       ROLES_GESTORES_PLANTILLAS: ${ROLES_GESTORES_PLANTILLAS:-administrador}
+      # Carpeta (volumen de Docker, fuera de Git) donde se guardan los PDF generados.
+      DOCUMENTOS_DIR: /app/documentos
+      # Marca con la que se emiten los documentos (EASY OFFICE o INOFFICE).
+      MARCA_POR_DEFECTO: ${MARCA_POR_DEFECTO:-EASY OFFICE}
+      # Datos de pago que se escriben en el contrato, uno por marca. Van SOLO en
+      # el .env (que no se sube a Git), nunca aqui. Sin ellos no se genera el documento.
+      BANCO_TEXTO_EASY_OFFICE: ${BANCO_TEXTO_EASY_OFFICE:-}
+      BANCO_TEXTO_INOFFICE: ${BANCO_TEXTO_INOFFICE:-}
     ports:
       - "8000:8000"
     volumes:
@@ -36,6 +44,7 @@ services:
       - ./tests:/app/tests
       - ./scripts:/app/scripts
       - plantillas_data:/app/plantillas
+      - documentos_data:/app/documentos
     depends_on:
       db:
         condition: service_healthy
@@ -56,3 +65,4 @@ services:
 volumes:
   db_data:
   plantillas_data:
+  documentos_data:
