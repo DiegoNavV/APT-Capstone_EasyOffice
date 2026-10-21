@@ -352,3 +352,14 @@ class ConfiguracionPlantillasOut(BaseModel):
     max_tamano_mb: int
     servicios: list[dict[str, Any]]
     marcas: list[MarcaOut]
+
+
+# ---------- Documento generado de un trámite ----------
+
+class DocumentoGeneradoOut(BaseModel):
+    id_tramite: int
+    folio: Optional[str] = None
+    nombre_archivo: str
+    tamano_bytes: int
+    hash_sha256: str
+    version_plantilla: str

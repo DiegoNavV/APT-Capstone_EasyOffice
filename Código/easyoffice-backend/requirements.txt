@@ -11,3 +11,4 @@ argon2-cffi==23.1.0
 slowapi==0.1.9
 # Subida de archivos (plantillas de documentos)
 python-multipart==0.0.26
+lxml==6.1.0
