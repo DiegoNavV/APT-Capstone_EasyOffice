@@ -584,6 +584,8 @@ def listar_tramites(
                 id_usuario_responsable=t.id_usuario_responsable,
                 nombre_agente=t.usuario_responsable.nombre if t.usuario_responsable else None,
                 fecha_actualizacion=t.fecha_actualizacion,
+                tiene_documento=bool(t.ruta_documento_generado),
+                folio=t.folio,
             )
             for t in tramites
         ],

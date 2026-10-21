@@ -102,8 +102,11 @@ def test_numero_de_version_no_se_repite_tras_activar_otra(subir, client, headers
 
 
 def test_archivo_identico_se_rechaza(subir):
-    subir(docx_con("{{FOLIO}}"))
-    r = subir(docx_con("{{FOLIO}}"))
+    # Se arma el archivo UNA sola vez: un .docx guarda la hora de creación
+    # (con precisión de 2 s), así que armarlo dos veces podía dar bytes distintos.
+    contenido = docx_con("{{FOLIO}}")
+    subir(contenido)
+    r = subir(contenido)
     assert r.status_code == 409
     assert "idéntico a la versión 1" in r.json()["detail"]
 
