@@ -257,6 +257,9 @@ class TramiteListadoOut(BaseModel):
     id_usuario_responsable: Optional[int] = None
     nombre_agente: Optional[str] = None
     fecha_actualizacion: Optional[datetime] = None
+    # True si ya se generó un PDF del trámite (ver /api/tramites/{id}/documento).
+    tiene_documento: bool = False
+    folio: Optional[str] = None  # el panel lo usa para nombrar el PDF descargado
 
 
 class TramitesPaginaOut(BaseModel):

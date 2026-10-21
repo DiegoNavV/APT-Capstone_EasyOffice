@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { ApiError } from '../lib/api.js'
-import { listarTramites, obtenerResumenTramites } from '../lib/tramitesApi.js'
+import { descargarDocumento, generarDocumento, listarTramites, obtenerResumenTramites } from '../lib/tramitesApi.js'
 import PaginaPanel from '../components/PaginaPanel.jsx'
 import StatusChip from '../components/StatusChip.jsx'
 
 // Vista "panel principal" (mockup Figma, pantalla "2 · Listado de trámites"), conectada al backend: GET /api/tramites 
 // (lista, filtros, búsqueda y paginación en el servidor) y GET /api/tramites/resumen (KPIs y opciones de los filtros). 
 // "+ Nuevo trámite" y el clic en una fila todavía no hacen nada porque esas funcionalidades no están construidas.
+// La columna PDF genera y descarga el documento del trámite (POST/GET /api/tramites/{id}/documento).
 
 const POR_PAGINA = 10
 const PAUSA_BUSQUEDA_MS = 300
@@ -21,6 +22,9 @@ const ESTADOS = [
   { valor: 'entregado', texto: 'Entregado' }
 ]
 
+// Con el documento ya firmado o entregado no se vuelve a generar (el servidor también lo impide).
+const ESTADOS_SIN_REGENERAR = ['firmado', 'entregado']
+
 const KPIS = [
   { clave: 'pendientes_datos', etiqueta: 'Pendientes de datos', nota: 'El cliente aún no completa sus datos' },
   { clave: 'en_proceso', etiqueta: 'En proceso', nota: 'Firma o revisión en curso' },
@@ -32,6 +36,9 @@ const claseFiltro = (activo) =>
   `text-[13px] font-medium px-3 py-[7px] rounded-md border transition-colors ${
     activo ? 'bg-brand-tint border-brand-primary text-brand-dark' : 'bg-surface border-line-strong text-ink-secondary hover:border-ink-muted'
   }`
+
+const claseBotonPdf =
+  'text-[13px] font-medium px-3 py-1.5 rounded-md border border-line-strong bg-surface text-ink-primary hover:border-ink-muted transition-colors disabled:opacity-50'
 
 const claseSelect =
   'text-[13px] font-medium px-3 py-[7px] rounded-md border border-line-strong bg-surface text-ink-secondary focus:outline-none focus:ring-2 focus:ring-brand-primary'
@@ -72,6 +79,9 @@ export default function Tramites() {
   const [resumen, setResumen] = useState(null) // { kpis, servicios, agentes }
   // Se incrementa para volver a pedir todo ("Actualizar", "Reintentar").
   const [recarga, setRecarga] = useState(0)
+  // Documento PDF: id del trámite en el que se está trabajando y el último aviso { tipo: 'ok' | 'error', texto }.
+  const [trabajando, setTrabajando] = useState(null)
+  const [aviso, setAviso] = useState(null)
 
   // Un 401 significa sesión vencida o revocada: se cierra la sesión y Panel.jsx redirige al login.
   function manejarError(e) {
@@ -159,9 +169,78 @@ export default function Tramites() {
   const servicios = resumen?.servicios ?? []
   const agentes = resumen?.agentes ?? []
 
-  // Filas que todavía no hacen nada al hacer clic (no existe vista de detalle construida).
+  // "+ Nuevo trámite" todavía no hace nada (no existe el flujo de creación).
   function detenerClic(e) {
     e.preventDefault()
+  }
+
+  async function generarPdf(t) {
+    setTrabajando(t.id_tramite)
+    setAviso(null)
+    try {
+      const doc = await generarDocumento({ accessToken, idTramite: t.id_tramite })
+      setItems((filas) => filas.map((f) => (f.id_tramite === t.id_tramite ? { ...f, tiene_documento: true, folio: doc.folio ?? f.folio } : f)))
+      setAviso({ tipo: 'ok', texto: `Documento generado para ${t.cliente.nombre} (plantilla versión ${doc.version_plantilla}).` })
+    } catch (e) {
+      const mensaje = manejarError(e)
+      if (mensaje) setAviso({ tipo: 'error', texto: mensaje })
+    } finally {
+      setTrabajando(null)
+    }
+  }
+
+  async function descargarPdf(t) {
+    setTrabajando(t.id_tramite)
+    setAviso(null)
+    try {
+      const blob = await descargarDocumento({ accessToken, idTramite: t.id_tramite })
+      const url = URL.createObjectURL(blob)
+      const enlace = document.createElement('a')
+      enlace.href = url
+      enlace.download = `${t.folio || t.codigo_seguimiento}.pdf`
+      document.body.appendChild(enlace)
+      enlace.click()
+      enlace.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      const mensaje = manejarError(e)
+      if (mensaje) setAviso({ tipo: 'error', texto: mensaje })
+    } finally {
+      setTrabajando(null)
+    }
+  }
+
+  function accionesPdf(t) {
+    const ocupado = trabajando !== null
+    const puedeRegenerar = !ESTADOS_SIN_REGENERAR.includes(t.estado_actual)
+    if (trabajando === t.id_tramite) return <span className="text-[13px] text-ink-muted">Un momento…</span>
+    if (!t.tiene_documento) {
+      return puedeRegenerar ? (
+        <button type="button" onClick={() => generarPdf(t)} disabled={ocupado} aria-label={`Generar documento de ${t.cliente.nombre}`} className={claseBotonPdf}>
+          Generar
+        </button>
+      ) : (
+        <span className="text-[13px] text-ink-muted">Sin documento</span>
+      )
+    }
+    return (
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={() => descargarPdf(t)} disabled={ocupado} aria-label={`Descargar documento de ${t.cliente.nombre}`} className={claseBotonPdf}>
+          Descargar
+        </button>
+        {puedeRegenerar && (
+          <button
+            type="button"
+            onClick={() => generarPdf(t)}
+            disabled={ocupado}
+            aria-label={`Regenerar documento de ${t.cliente.nombre}`}
+            className="text-[13px] font-medium text-ink-link hover:underline disabled:opacity-50"
+          >
+            Regenerar
+          </button>
+        )}
+      </div>
+    )
   }
 
   const acciones = (
@@ -195,6 +274,19 @@ export default function Tramites() {
 
   return (
     <PaginaPanel titulo="Trámites" acciones={acciones}>
+      {aviso && (
+        <div
+          role={aviso.tipo === 'error' ? 'alert' : 'status'}
+          className={`mb-4 flex items-start justify-between gap-4 text-sm rounded-lg px-4 py-2.5 ${
+            aviso.tipo === 'error' ? 'text-red-600 bg-red-50 border border-red-200' : 'text-status-signed-fg bg-status-signed-bg'
+          }`}
+        >
+          <p>{aviso.texto}</p>
+          <button type="button" onClick={() => setAviso(null)} className="font-medium underline shrink-0">
+            Cerrar
+          </button>
+        </div>
+      )}
       <div className="flex gap-4">
         {KPIS.map((kpi) => (
           <div key={kpi.clave} className="bg-surface border border-line rounded-[10px] flex-1 px-5 py-[18px]">
@@ -253,6 +345,7 @@ export default function Tramites() {
           <span className="w-[170px]">AGENTE</span>
           <span className="w-[150px]">ACTUALIZADO</span>
           <span className="w-[150px]">ESTADO</span>
+          <span className="w-[170px]">PDF</span>
         </div>
 
         {error ? (
@@ -272,7 +365,7 @@ export default function Tramites() {
           <div className={cargando ? 'opacity-60' : ''}>
             {items.map((t) => (
               // No hay vista de detalle construida todavía: la fila no navega a ningún lado.
-              <a key={t.id_tramite} href="#" onClick={detenerClic} className="border-b border-line last:border-b-0 cursor-pointer flex items-center px-4 py-[13px] hover:bg-canvas transition-colors">
+              <div key={t.id_tramite} className="border-b border-line last:border-b-0 flex items-center px-4 py-[13px] hover:bg-canvas transition-colors">
                 <div className="flex-1 min-w-0">
                   <p
                     className="text-sm font-medium text-ink-primary"
@@ -292,7 +385,8 @@ export default function Tramites() {
                 <span className="w-[150px]">
                   <StatusChip variant={t.estado_actual} />
                 </span>
-              </a>
+                <span className="w-[170px]">{accionesPdf(t)}</span>
+              </div>
             ))}
           </div>
         )}

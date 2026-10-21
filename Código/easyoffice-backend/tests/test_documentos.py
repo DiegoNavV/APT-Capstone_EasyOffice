@@ -145,3 +145,14 @@ def test_con_libreoffice_real(client, headers_agente, tramite, subir, con_banco,
     assert r.status_code == 200, r.text
     d = client.get(f"/api/tramites/{tramite.id_tramite}/documento", headers=headers_agente)
     assert d.content.startswith(b"%PDF") and len(d.content) > 1000
+
+
+def test_el_listado_indica_si_el_tramite_tiene_documento(client, headers_agente, tramite, con_plantilla, con_banco):
+    def fila():
+        items = client.get("/api/tramites", headers=headers_agente).json()["items"]
+        return next(i for i in items if i["id_tramite"] == tramite.id_tramite)
+
+    assert fila()["tiene_documento"] is False
+    assert generar(client, headers_agente, tramite.id_tramite).status_code == 200
+    assert fila()["tiene_documento"] is True
+    assert fila()["folio"] == "LF-01-2026"
