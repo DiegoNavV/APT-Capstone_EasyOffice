@@ -246,9 +246,13 @@ CREATE TABLE datos_empresa_tramite (
 -- por el ORM (un script, una migracion de datos, etc).
 -- =========================
 
--- usuario.email y cliente.rut son UNIQUE: se normalizan a minusculas + trim
--- antes de guardar para que esa unicidad sea realmente case-insensitive y no
--- se puedan crear "duplicados" solo por mayusculas o espacios de copiar/pegar.
+-- usuario.email y cliente.rut son UNIQUE: se normalizan antes de guardar para que
+-- esa unicidad no se rompa por mayusculas o espacios de copiar/pegar.
+--   - email: minusculas + trim.
+--   - rut: MAYUSCULAS + trim. La app (normalizar_rut en app/utils.py) guarda la K
+--     del digito verificador en mayuscula y busca clientes por comparacion exacta
+--     (crud.py), asi que el trigger debe dejarla igual: si no, un RUT terminado
+--     en K no se reconoce y se crea un cliente duplicado.
 CREATE OR REPLACE FUNCTION normalizar_usuario_email()
 RETURNS trigger AS $$
 BEGIN
@@ -268,7 +272,7 @@ CREATE OR REPLACE FUNCTION normalizar_cliente_rut()
 RETURNS trigger AS $$
 BEGIN
     IF NEW.rut IS NOT NULL THEN
-        NEW.rut := lower(trim(NEW.rut));
+        NEW.rut := upper(trim(NEW.rut));
     END IF;
     RETURN NEW;
 END;
