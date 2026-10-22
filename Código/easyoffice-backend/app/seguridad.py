@@ -45,7 +45,7 @@ BLOQUEO_MINUTOS = int(os.getenv("BLOQUEO_MINUTOS", "15"))
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
 
 # Límite de peticiones por IP (se aplica con @limiter.limit en cada endpoint).
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_remote_address, key_style="endpoint")
 
 
 def ahora_utc() -> datetime:

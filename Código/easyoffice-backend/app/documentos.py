@@ -1,8 +1,8 @@
 """
 Generación del documento de un trámite: toma la plantilla activa del servicio, la rellena con los datos del trámite y la convierte a PDF.
 
-El PDF se guarda en DOCUMENTOS_DIR (volumen de Docker, fuera de Git) con un nombre que fijamos nosotros (tramite_<id>.pdf); 
-en la base solo queda la ruta relativa, en `tramite.ruta_documento_generado`. Generar de nuevo reemplaza el PDF anterior, salvo que el 
+El PDF se guarda en DOCUMENTOS_DIR (volumen de Docker, fuera de Git) con un nombre que fijamos nosotros (tramite_<id>.pdf); en 
+la base solo queda la ruta relativa, en `tramite.ruta_documento_generado`. Generar de nuevo reemplaza el PDF anterior, salvo que el 
 trámite ya esté firmado o entregado.
 
 Todavía NO cambia el estado del trámite ni envía nada a la firma: eso es el paso siguiente del plan (API de firma).
@@ -17,7 +17,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, plantillas
-from app.convertir_pdf import ErrorConversion, docx_a_pdf
+from app.convertir_pdf import ErrorConversion, ServidorOcupado, docx_a_pdf
 from app.marcas_documento import CATALOGO_MARCAS, PlantillaInvalida
 from app.rellenar_docx import FaltanDatos, rellenar_docx
 from app.valores_documento import valores_para_documento
@@ -77,12 +77,10 @@ def _plantilla_activa(db: Session, tramite: models.Tramite) -> models.PlantillaD
     return plantilla
 
 
-def generar(db: Session, tramite: models.Tramite) -> dict:
-    """Genera (o regenera) el PDF del trámite. Devuelve sus datos; lanza
-    DocumentoNoGenerable si algo impide hacerlo."""
-    if tramite.estado_actual in ESTADOS_BLOQUEADOS:
-        raise DocumentoNoGenerable("El trámite ya está firmado; su documento no se puede volver a generar.")
-
+def armar_docx(db: Session, tramite: models.Tramite, valores: dict | None = None) -> tuple[bytes, models.PlantillaDocumento]:
+    """Rellena la plantilla activa del servicio y devuelve (.docx, plantilla).
+    `valores` solo se pasa en la vista previa del borrador; si no, se arman con
+    los datos guardados del trámite. Lanza DocumentoNoGenerable si algo falla."""
     plantilla = _plantilla_activa(db, tramite)
     try:
         contenido = plantillas.ruta_absoluta(plantilla).read_bytes()
@@ -92,7 +90,7 @@ def generar(db: Session, tramite: models.Tramite) -> dict:
         ) from None
 
     try:
-        docx = rellenar_docx(contenido, valores_para_documento(tramite))
+        docx = rellenar_docx(contenido, valores if valores is not None else valores_para_documento(tramite))
     except FaltanDatos as exc:
         nombres = [CATALOGO_MARCAS.get(m, m) for m in exc.marcas]
         raise DocumentoNoGenerable(
@@ -101,9 +99,21 @@ def generar(db: Session, tramite: models.Tramite) -> dict:
         ) from None
     except PlantillaInvalida as exc:
         raise DocumentoNoGenerable(f"La plantilla activa no se puede usar: {exc}") from None
+    return docx, plantilla
+
+
+def generar(db: Session, tramite: models.Tramite) -> dict:
+    """Genera (o regenera) el PDF del trámite. Devuelve sus datos; lanza
+    DocumentoNoGenerable si algo impide hacerlo."""
+    if tramite.estado_actual in ESTADOS_BLOQUEADOS:
+        raise DocumentoNoGenerable("El trámite ya está firmado; su documento no se puede volver a generar.")
+
+    docx, plantilla = armar_docx(db, tramite)
 
     try:
         pdf = docx_a_pdf(docx)
+    except ServidorOcupado as exc:      # cola llena: no es un fallo, basta reintentar
+        raise DocumentoNoGenerable(str(exc), codigo_http=503) from None
     except ErrorConversion as exc:
         log.error("Conversión a PDF fallida (trámite %s): %s", tramite.id_tramite, exc.detalle)
         raise DocumentoNoGenerable(str(exc), codigo_http=502) from None

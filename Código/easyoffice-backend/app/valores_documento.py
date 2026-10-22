@@ -83,16 +83,28 @@ def texto_bancario(marca: str) -> str | None:
     return _texto(os.getenv(f"BANCO_TEXTO_{normalizar_marca(marca)}"))
 
 
-def valores_para_documento(tramite) -> dict[str, str | None]:
-    empresa, sucursal = tramite.empresa, tramite.sucursal
-    datos = (empresa.datos or {}) if empresa else {}
+def valores_para_documento(tramite, empresa_simulada: dict | None = None) -> dict[str, str | None]:
+    """
+    `empresa_simulada` (solo para la vista previa del borrador) reemplaza a la empresa guardada: {"razon_social", 
+    "rut_empresa", "datos"}. Sirve para armar el documento con datos que el cliente aún no envía, sin guardar nada.
+    """
+    sucursal = tramite.sucursal
+    if empresa_simulada is not None:
+        razon_social = empresa_simulada.get("razon_social")
+        rut_empresa = empresa_simulada.get("rut_empresa")
+        datos = empresa_simulada.get("datos") or {}
+    else:
+        empresa = tramite.empresa
+        razon_social = empresa.razon_social if empresa else None
+        rut_empresa = empresa.rut_empresa if empresa else None
+        datos = (empresa.datos or {}) if empresa else {}
     cond = tramite.condiciones or {}
 
     valores: dict[str, str | None] = {
         "FOLIO": _texto(tramite.folio),
         # Empresa y representante (los escribió el cliente)
-        "RAZON_SOCIAL": _mayus(empresa.razon_social) if empresa else None,
-        "RUT": rut_con_puntos(empresa.rut_empresa) if empresa else None,
+        "RAZON_SOCIAL": _mayus(razon_social),
+        "RUT": rut_con_puntos(rut_empresa),
         "GIRO_PRINCIPAL": _mayus(datos.get("giro_principal")),
         "REPRESENTANTE_LEGAL": _mayus(datos.get("representante_legal")),
         "RUT_REP_LEGAL": rut_con_puntos(datos.get("rut_representante")),

@@ -9,7 +9,8 @@ from io import BytesIO
 
 import pytest
 
-from app.convertir_pdf import ErrorConversion, docx_a_pdf
+from app import convertir_pdf
+from app.convertir_pdf import ErrorConversion, ServidorOcupado, docx_a_pdf
 from app.rellenar_docx import rellenar_docx
 
 requiere_libreoffice = pytest.mark.skipif(shutil.which("soffice") is None, reason="LibreOffice no instalado")
@@ -87,3 +88,32 @@ def test_sin_libreoffice_instalado(monkeypatch):
     with pytest.raises(ErrorConversion) as exc:
         docx_a_pdf(docx_valido(["x"]))
     assert "no está instalado" in str(exc.value)
+
+
+# ---------- cola ----------
+
+def test_si_no_hay_cupo_responde_ocupado_sin_esperar_de_mas(monkeypatch):
+    cupo = threading.BoundedSemaphore(1)
+    cupo.acquire()                                    # el único lugar ya está ocupado
+    monkeypatch.setattr(convertir_pdf, "_CUPO", cupo)
+    with pytest.raises(ServidorOcupado) as exc:
+        docx_a_pdf(docx_valido(["x"]), espera_maxima=0.05)
+    assert "Intenta de nuevo" in str(exc.value)
+
+
+def test_el_cupo_se_libera_aunque_la_conversion_falle(monkeypatch):
+    cupo = threading.BoundedSemaphore(1)
+    monkeypatch.setattr(convertir_pdf, "_CUPO", cupo)
+    monkeypatch.setenv("SOFFICE_BIN", "programa-que-no-existe")
+    with pytest.raises(ErrorConversion):
+        docx_a_pdf(docx_valido(["x"]))
+    assert cupo.acquire(blocking=False)               # si no se hubiera liberado, aquí fallaría
+
+
+def test_el_archivo_invalido_no_ocupa_la_cola(monkeypatch):
+    cupo = threading.BoundedSemaphore(1)
+    cupo.acquire()
+    monkeypatch.setattr(convertir_pdf, "_CUPO", cupo)
+    with pytest.raises(ErrorConversion) as exc:       # se rechaza antes de esperar turno
+        docx_a_pdf(b"no soy un word", espera_maxima=0.05)
+    assert not isinstance(exc.value, ServidorOcupado)

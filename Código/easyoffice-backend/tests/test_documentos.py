@@ -128,6 +128,16 @@ def test_falla_la_conversion(client, headers_agente, tramite, con_plantilla, con
     assert "secreto interno" not in r.text           # el detalle técnico no sale al cliente
 
 
+def test_cola_llena_responde_503(client, headers_agente, tramite, con_plantilla, con_banco, monkeypatch):
+    from app.convertir_pdf import ServidorOcupado
+
+    def ocupado(docx):
+        raise ServidorOcupado("Hay muchas solicitudes en este momento. Intenta de nuevo en unos segundos.")
+
+    monkeypatch.setattr("app.documentos.docx_a_pdf", ocupado)
+    r = generar(client, headers_agente, tramite.id_tramite)
+    assert r.status_code == 503 and "Intenta de nuevo" in r.json()["detail"]
+
 def test_ruta_manipulada_no_se_descarga(client, headers_agente, tramite, db_session, entorno):
     tramite.ruta_documento_generado = "../../etc/passwd"
     db_session.commit()

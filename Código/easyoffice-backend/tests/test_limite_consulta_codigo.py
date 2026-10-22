@@ -52,3 +52,11 @@ def test_consulta_normal_no_se_ve_afectada(client, tramite_de, limite_activo):
     resp = _consultar(client, tramite.codigo_seguimiento)
     assert resp.status_code == 200
     assert resp.json()["codigo_seguimiento"] == tramite.codigo_seguimiento
+
+
+def test_probar_codigos_distintos_tambien_se_frena(client, limite_activo):
+    # Quien prueba códigos a ciegas cambia el código en cada intento: el contador
+    # debe ser por IP, no por dirección completa (que incluye el código).
+    respuestas = [_consultar(client, f"ABCDE{n:03d}").status_code for n in range(31)]
+    assert respuestas[:30] == [404] * 30
+    assert respuestas[30] == 429

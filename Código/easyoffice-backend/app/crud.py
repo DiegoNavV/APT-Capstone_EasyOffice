@@ -348,6 +348,28 @@ MENSAJE_CAMPO_REGISTRADO = (
     "Si necesitas cambiarlo, contacta a tu agente."
 )
 
+def revisar_campos_cliente(definicion, empresa, campos: dict) -> tuple[tuple, dict[str, str], dict[str, str]]:
+    """
+    Revisa los campos que escribió el cliente. Devuelve (pendientes, limpios, errores).
+
+    Solo se aceptan los que la empresa aún no tiene: uno ya registrado se rechaza nombrándolo (nunca se sobrescribe). 
+    Lo comparten el envío definitivo y la vista previa del borrador, para que ambos apliquen exactamente las mismas reglas.
+    """
+    registrados = {c.clave for c in definicion if valor_guardado(empresa, c)}
+    pendientes = tuple(c for c in definicion if c.clave not in registrados)
+    valores = dict(campos)
+    errores: dict[str, str] = {}
+    for clave in sorted(registrados & set(valores)):
+        errores[clave] = MENSAJE_CAMPO_REGISTRADO
+        del valores[clave]
+
+    limpios: dict[str, str] = {}
+    try:
+        limpios = campos_servicio.validar_campos(pendientes, valores)
+    except campos_servicio.ErrorCampos as exc:
+        errores.update(exc.errores)
+    return pendientes, limpios, errores
+
 
 def registrar_envio_datos(
     db: Session, tramite: models.Tramite, envio: schemas.EnvioDatosIn
@@ -376,18 +398,8 @@ def registrar_envio_datos(
     if not envio.acepta_no_editar:
         errores["acepta_no_editar"] = "Debes confirmar que no podrás editar tus datos después de enviarlos."
 
-    registrados = {c.clave for c in definicion if _valor_guardado(empresa, c)}
-    pendientes = tuple(c for c in definicion if c.clave not in registrados)
-    valores = dict(envio.campos)
-    for clave in sorted(registrados & set(valores)):
-        errores[clave] = MENSAJE_CAMPO_REGISTRADO
-        del valores[clave]
-
-    limpios: dict[str, str] = {}
-    try:
-        limpios = campos_servicio.validar_campos(pendientes, valores)
-    except campos_servicio.ErrorCampos as exc:
-        errores.update(exc.errores)
+    pendientes, limpios, errores_campos = revisar_campos_cliente(definicion, empresa, envio.campos)
+    errores.update(errores_campos)
 
     if errores:
         raise campos_servicio.ErrorCampos(errores)
@@ -454,7 +466,7 @@ def documento_disponible(tramite: models.Tramite) -> bool:
 ESTADO_ESPERANDO_DATOS = "generado"
 
 
-def _valor_guardado(empresa: models.Empresa | None, campo: campos_servicio.Campo):
+def valor_guardado(empresa: models.Empresa | None, campo: campos_servicio.Campo):
     """Lo que la empresa vinculada ya tiene para este campo (None si no hay)."""
     if empresa is None:
         return None
@@ -480,7 +492,7 @@ def obtener_formulario(tramite: models.Tramite) -> schemas.FormularioOut:
     campos: list[schemas.CampoFormularioOut] = []
     if disponible:
         for campo in definicion:
-            guardado = _valor_guardado(tramite.empresa, campo)
+            guardado = valor_guardado(tramite.empresa, campo)
             registrado = bool(guardado)
             campos.append(schemas.CampoFormularioOut(
                 clave=campo.clave,

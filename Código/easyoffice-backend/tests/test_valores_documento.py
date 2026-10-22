@@ -153,6 +153,34 @@ def test_sin_texto_bancario_configurado(tramite, monkeypatch):
     assert valores_para_documento(tramite)["BANCOLINK"] is None
 
 
+# ---------- empresa simulada (vista previa del borrador) ----------
+
+def test_empresa_simulada_reemplaza_a_la_guardada(tramite):
+    valores = valores_para_documento(tramite, empresa_simulada={
+        "razon_social": "otra empresa spa", "rut_empresa": "76123456-0",
+        "datos": {"giro_principal": "venta de pan", "email": "a@b.cl"},
+    })
+    assert valores["RAZON_SOCIAL"] == "OTRA EMPRESA SPA"
+    assert valores["RUT"] == "76.123.456-0"
+    assert valores["GIRO_PRINCIPAL"] == "VENTA DE PAN"
+    assert valores["MAIL"] == "a@b.cl"
+    assert valores["REPRESENTANTE_LEGAL"] is None       # lo que no viene en la simulada queda sin dato
+    assert valores["FOLIO"] == "LF-01-2026"             # lo del trámite no cambia
+
+
+def test_empresa_simulada_sirve_para_un_tramite_sin_empresa(tramite, db_session):
+    tramite.id_empresa = None
+    db_session.commit()
+    db_session.refresh(tramite)
+    assert valores_para_documento(tramite)["RUT"] is None
+    valores = valores_para_documento(tramite, empresa_simulada={"razon_social": "x spa", "rut_empresa": "76123456-0", "datos": {}})
+    assert valores["RAZON_SOCIAL"] == "X SPA"
+
+
+def test_sin_empresa_simulada_todo_igual_que_antes(tramite):
+    assert valores_para_documento(tramite)["RUT"] == "78.526.673-0"
+
+
 # ---------- junto con rellenar_docx ----------
 
 def test_documento_completo_con_todas_las_marcas(tramite, monkeypatch):
