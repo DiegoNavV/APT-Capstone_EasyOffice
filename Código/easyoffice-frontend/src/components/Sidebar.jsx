@@ -2,8 +2,9 @@ import { NavLink } from 'react-router-dom'
 
 // Sidebar del panel interno (mockup Figma, pantalla "2 · Listado de trámites").
 // "Solicitudes" no está en el mockup original, pero se agregó acá porque es una vista real ya construida (solicitud de contacto -> trámite).
-// Las secciones que todavía no se desarrollan (Clientes, Plantillas, Reportes, Configuración) sí navegan, pero muestran "Próximamente" 
+// Las secciones que todavía no se desarrollan (Clientes, Configuración) sí navegan, pero muestran "Próximamente"
 // (ver Proximamente.jsx y las rutas en App.jsx); a medida que se construyan, se activan en App.jsx.
+// Reportes navega siempre (no se oculta para agentes): el backend decide con `puede_ver` si se le muestran los datos o un aviso.
 // Cerrar sesión no va acá: está en el menú desplegable del avatar (UserMenu).
 const ITEMS = [
   { id: 'tramites', label: 'Trámites', href: '/panel/tramites' },

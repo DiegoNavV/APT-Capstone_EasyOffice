@@ -40,9 +40,22 @@ def resumen_tramites(
     db: Session = Depends(get_db),
     _usuario: models.Usuario = Depends(get_usuario_actual),
 ):
-    """Uso del panel (requiere login): KPIs de la cabecera y las opciones de los filtros (servicios y agentes activos). 
+    """Uso del panel (requiere login): KPIs de la cabecera y las opciones de los filtros (servicios y agentes activos).
     Solo números y nombres."""
     return crud.resumen_tramites(db)
+
+
+@router.get("/reporte", response_model=schemas.ReporteTramitesOut)
+def reporte_tramites(
+    db: Session = Depends(get_db),
+    usuario: models.Usuario = Depends(get_usuario_actual),
+):
+    """Disponible para cualquier usuario con sesión: dice si puede ver reportes y, si puede, entrega los conteos
+    agregados (por estado, por servicio, por agente). Exclusivo de administradores -- confirmado con el cliente,
+    no es un supuesto (ver Resumen_Alcance_Proyecto_EasyOffice.docx)."""
+    if usuario.rol_nombre.lower() != "administrador":
+        return schemas.ReporteTramitesOut(puede_ver=False)
+    return crud.reporte_tramites(db)
 
 
 @router.get("/codigo/{codigo}", response_model=schemas.SeguimientoOut)
