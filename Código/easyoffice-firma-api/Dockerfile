@@ -14,6 +14,7 @@ COPY . .
 RUN sed -i 's/\r$//' scripts/entrypoint.sh \
     && chmod +x scripts/entrypoint.sh \
     && useradd --create-home --uid 10001 appuser \
+    && mkdir -p /app/certs \
     && chown -R appuser /app
 
 # La API no corre como root dentro del contenedor.

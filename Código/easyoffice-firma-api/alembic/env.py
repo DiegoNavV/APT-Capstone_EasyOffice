@@ -7,8 +7,8 @@ from sqlalchemy import engine_from_config, pool
 from app.core.config import get_settings
 from app.db.base import Base
 
-# Importar aquí los modelos de cada fase para que autogenerate los detecte.
-# (Fase 0: todavía no hay modelos.)
+# Importar los modelos para que autogenerate los detecte.
+import app.models  # noqa: E402,F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().database_url)

@@ -62,6 +62,30 @@ class Settings(BaseSettings):
     # Pimienta para el hash de API keys y tokens de firma.
     token_pepper: str = DEV_SECRET
 
+    # ---------- Acceso de clientes de la API (CRM) ----------
+    # API keys aceptadas, separadas por coma. Versión de pruebas: una clave por
+    # cliente definida por variable de entorno. (La gestión completa de
+    # organizaciones y API keys con hash y rotación es la Fase 1.)
+    api_keys: str = "fk_test_dev-inseguro-cambiar"
+
+    # ---------- Firma y documentos ----------
+    # Nombre que firma automáticamente ("firma desatendida"). VALIDAR CON ABOGADO.
+    organization_signer_name: str = "Easy Office SpA"
+    organization_signer_rut: str = ""
+    # Carpeta donde se guarda (o se crea la primera vez) el certificado de la
+    # plataforma para el sello PAdES. NO es un certificado de un PSC acreditado.
+    certs_dir: str = "/app/certs"
+    max_pdf_bytes: int = Field(default=10 * 1024 * 1024, ge=1024)
+    # URL pública de la API, para imprimir el enlace de verificación en la hoja de evidencias.
+    public_base_url: str = "http://localhost:8100"
+
+    # ---------- Webhooks ----------
+    # Secreto para firmar los webhooks (HMAC-SHA256). El CRM usa el mismo valor para verificarlos.
+    webhook_secret: str = DEV_SECRET
+    # Hosts a los que se permite enviar webhooks (evita SSRF). Separados por coma.
+    webhook_allowed_hosts: str = "backend,localhost,127.0.0.1,host.docker.internal"
+    webhook_max_attempts: int = Field(default=6, ge=1, le=20)
+
     # ---------- Parámetros legales (VALIDAR CON ABOGADO) ----------
     # Años de retención de documentos y evidencias.
     retention_years: int = Field(default=6, ge=1)
@@ -87,7 +111,7 @@ class Settings(BaseSettings):
             return self
         con_valor_dev = [
             nombre
-            for nombre in ("s3_secret_key", "token_pepper")
+            for nombre in ("s3_secret_key", "token_pepper", "webhook_secret")
             if getattr(self, nombre) == DEV_SECRET
         ]
         if self.master_key_hex == DEV_MASTER_KEY_HEX:
@@ -97,7 +121,17 @@ class Settings(BaseSettings):
                 "En producción estos secretos deben definirse por variable de entorno: "
                 + ", ".join(sorted(con_valor_dev))
             )
+        if any("dev-inseguro" in k for k in self.api_key_list) or not self.api_key_list:
+            raise ValueError("En producción API_KEYS debe definirse con claves propias.")
         return self
+
+    @property
+    def api_key_list(self) -> list[str]:
+        return [k.strip() for k in self.api_keys.split(",") if k.strip()]
+
+    @property
+    def webhook_allowed_host_list(self) -> list[str]:
+        return [h.strip().lower() for h in self.webhook_allowed_hosts.split(",") if h.strip()]
 
     @property
     def cors_origin_list(self) -> list[str]:

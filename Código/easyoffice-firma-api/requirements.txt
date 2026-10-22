@@ -8,6 +8,10 @@ psycopg2-binary==2.9.9
 redis==5.1.1
 celery==5.4.0
 minio==7.2.9
+python-multipart==0.0.12
+httpx==0.27.2
+pypdf==5.0.1
+reportlab==4.2.2
+pyhanko==0.25.1
 # Tests
 pytest==8.3.3
-httpx==0.27.2

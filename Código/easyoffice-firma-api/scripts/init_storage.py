@@ -12,7 +12,7 @@ from app.core.config import get_settings  # noqa: E402
 from app.core.storage import get_storage_client  # noqa: E402
 
 
-def main(intentos: int = 10) -> None:
+def main(intentos: int = 30) -> None:
     bucket = get_settings().s3_bucket_documents
     cliente = get_storage_client()
     for intento in range(1, intentos + 1):

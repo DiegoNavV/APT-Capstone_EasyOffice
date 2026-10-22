@@ -11,7 +11,7 @@ from app.services.health import Check, get_checks, run_checks
 
 router = APIRouter(prefix="/health", tags=["health"])
 
-API_VERSION = "0.1.0"
+API_VERSION = "0.2.0"
 
 
 @router.get("")

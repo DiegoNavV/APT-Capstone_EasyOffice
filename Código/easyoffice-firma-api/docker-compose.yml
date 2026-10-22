@@ -28,6 +28,11 @@ x-api-env: &api-env
   MASTER_KEY_HEX: ${MASTER_KEY_HEX:-00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff}
   TOKEN_PEPPER: ${TOKEN_PEPPER:-dev-inseguro-cambiar}
   FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
+  API_KEYS: ${API_KEYS:-fk_test_dev-inseguro-cambiar}
+  WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-inseguro-cambiar}
+  WEBHOOK_ALLOWED_HOSTS: ${WEBHOOK_ALLOWED_HOSTS:-backend,localhost,127.0.0.1,host.docker.internal}
+  PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8100}
+  ORGANIZATION_SIGNER_NAME: ${ORGANIZATION_SIGNER_NAME:-Easy Office SpA}
 
 services:
   api:
@@ -40,6 +45,8 @@ services:
       - ./app:/app/app
       - ./alembic:/app/alembic
       - ./tests:/app/tests
+      # Certificado de la plataforma: se crea la primera vez y se conserva.
+      - certs_data:/app/certs
     networks:
       default: {}
       easyoffice-net:
@@ -60,7 +67,9 @@ services:
 
   worker:
     build: .
-    command: celery -A app.worker.celery_app worker --loglevel=INFO
+    # -B: incluye el planificador (beat) para la tarea periódica de expiración.
+    # --schedule en /tmp: el usuario del contenedor no escribe en /app.
+    command: celery -A app.worker.celery_app worker -B --schedule /tmp/celerybeat-schedule --loglevel=INFO
     environment: *api-env
     # El worker envía los webhooks al CRM (Fase 5): necesita la red compartida.
     networks:
@@ -116,6 +125,7 @@ services:
 volumes:
   db_data:
   minio_data:
+  certs_data:
 
 networks:
   default: {}
