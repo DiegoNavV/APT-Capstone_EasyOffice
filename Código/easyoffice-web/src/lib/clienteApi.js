@@ -51,3 +51,48 @@ export function enviarDatos(codigo, cuerpo) {
     body: JSON.stringify(cuerpo)
   })
 }
+
+const MENSAJE_LIMITE_BORRADOR =
+  'Pediste el borrador demasiadas veces en poco tiempo. Espera un rato e inténtalo de nuevo.'
+
+const PREFIJO_IMAGEN = 'data:image/jpeg;base64,'
+
+// El borrador llega como imágenes (una por página, con marca de agua), nunca como PDF.
+function esBorradorValido(datos) {
+  return (
+    datos !== null &&
+    typeof datos === 'object' &&
+    typeof datos.total === 'number' &&
+    Array.isArray(datos.paginas) &&
+    datos.paginas.length > 0 &&
+    datos.paginas.every(
+      (p) => p !== null && typeof p === 'object' && typeof p.imagen === 'string' && p.imagen.startsWith(PREFIJO_IMAGEN)
+    )
+  )
+}
+
+// Pide el borrador con los datos que el cliente lleva escritos. No guarda nada en el servidor.
+// Devuelve { total, paginas: [{ numero, imagen }] }.
+export async function obtenerBorrador(codigo, campos) {
+  let respuesta
+  try {
+    respuesta = await fetch(`${API_URL}/api/tramites/codigo/${encodeURIComponent(codigo)}/vista-previa`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campos })
+    })
+  } catch {
+    throw new ErrorCliente(MENSAJE_SIN_CONEXION, 0)
+  }
+  if (!respuesta.ok) {
+    if (respuesta.status === 429) throw new ErrorCliente(MENSAJE_LIMITE_BORRADOR, 429)
+    const datos = await respuesta.json().catch(() => ({}))
+    throw convertirError(respuesta.status, datos)
+  }
+  const datos = await respuesta.json().catch(() => null)
+  if (!esBorradorValido(datos)) throw new ErrorCliente(MENSAJE_GENERICO, respuesta.status)
+  return {
+    total: datos.total,
+    paginas: datos.paginas.map((p, i) => ({ numero: typeof p.numero === 'number' ? p.numero : i + 1, imagen: p.imagen }))
+  }
+}
