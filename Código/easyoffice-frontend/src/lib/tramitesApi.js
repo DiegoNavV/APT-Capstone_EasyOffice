@@ -20,6 +20,7 @@ export function obtenerResumenTramites({ accessToken }) {
   return pedir('/api/tramites/resumen', { accessToken })
 }
 
+<<<<<<< Updated upstream
 // --- Documento PDF del trámite (contrato, autorización...) ---
 
 // El servidor responde `detail` como texto o, cuando faltan datos, como { mensaje, faltantes }.
@@ -52,4 +53,10 @@ export async function descargarDocumento({ accessToken, idTramite }) {
     throw new ApiError(mensajeDeDocumento(data, 'No se pudo descargar el documento.'), res.status)
   }
   return res.blob()
+=======
+// Conteos agregados para la vista de Reportes: { puede_ver, total, por_estado, por_servicio, por_agente }.
+// `puede_ver` es false para quienes no son administrador (el panel muestra solo un aviso).
+export function obtenerReporteTramites({ accessToken }) {
+  return pedir('/api/tramites/reporte', { accessToken })
+>>>>>>> Stashed changes
 }

@@ -290,6 +290,22 @@ class TramitesResumenOut(BaseModel):
     agentes: list[OpcionAgenteOut]
 
 
+class ReporteConteoOut(BaseModel):
+    etiqueta: str
+    cantidad: int
+
+
+class ReporteTramitesOut(BaseModel):
+    """Conteos agregados para la vista de Reportes del panel. `puede_ver` es false para quienes no tienen permiso
+    (el panel muestra solo un aviso) -- exclusivo de administradores, confirmado con el cliente (ver
+    Resumen_Alcance_Proyecto_EasyOffice.docx: "panel de resumen" es una función exclusiva del administrador)."""
+    puede_ver: bool
+    total: int = 0
+    por_estado: list[ReporteConteoOut] = []
+    por_servicio: list[ReporteConteoOut] = []
+    por_agente: list[ReporteConteoOut] = []
+
+
 # ---------- Catálogos para armar el contrato (panel de agentes) ----------
 
 class SucursalOut(BaseModel):
