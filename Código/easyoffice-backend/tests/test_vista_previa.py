@@ -1,12 +1,22 @@
 """
-Vista previa del borrador para el cliente (pública, con su código). Se prueba lo importante: no guarda nada, enmascara lo ya 
-registrado, comparte las reglas del envío, no filtra detalles técnicos y se frena con los límites.
+Vista previa del borrador para el cliente (pública, con su código). Se prueba lo importante: no guarda nada, enmascara lo ya
+registrado, comparte las reglas del envío, NUNCA entrega un PDF (solo imágenes con marca de agua), no filtra detalles técnicos
+y se frena con los límites.
+
+LibreOffice y pdftoppm se reemplazan por funciones falsas (el enmascarado se revisa en el .docx que recibe el conversor, antes
+de pasar a imágenes); la marca de agua sí es la real. La prueba de punta a punta con pdftoppm real se omite si no está instalado
+(en Docker sí está).
 """
+import base64
 import itertools
+import logging
+import shutil
+from io import BytesIO
 
 import pytest
+from PIL import Image, ImageDraw
 
-from app import models, vista_previa
+from app import convertir_pdf, marca_agua, models, vista_previa
 from app.convertir_pdf import ErrorConversion, ServidorOcupado
 from app.seguridad import limiter
 from tests.test_cliente_envio import CAMPOS_CONTRATO, CONTRATO, empresa_completa, tramite_de  # noqa: F401
@@ -15,6 +25,20 @@ from tests.test_rellenar_docx import textos_de
 
 PDF_FALSO = b"%PDF-1.4 borrador de prueba"
 PLANTILLA = "{{FOLIO}} | {{RAZON_SOCIAL}} | {{RUT}} | {{MAIL}} | {{CELULAR_8_DIGITOS}} | {{GIRO_PRINCIPAL}}"
+PREFIJO = "data:image/jpeg;base64,"
+TEXTO_NEGRO = (40, 40, 360, 80)          # zona "con texto" de la página falsa
+
+
+def pagina_falsa(ancho: int = 400, alto: int = 520) -> bytes:
+    """Página blanca con un bloque negro que hace de texto, como la entregaría pdftoppm."""
+    imagen = Image.new("RGB", (ancho, alto), "white")
+    ImageDraw.Draw(imagen).rectangle(TEXTO_NEGRO, fill="black")
+    buf = BytesIO()
+    imagen.save(buf, format="JPEG", quality=80)
+    return buf.getvalue()
+
+
+PAGINAS_FALSAS = [pagina_falsa(), pagina_falsa()]
 
 
 @pytest.fixture(autouse=True)
@@ -32,6 +56,19 @@ def entorno(monkeypatch):
     monkeypatch.setattr("app.vista_previa.docx_a_pdf", falso)
     yield recibidos
     vista_previa.vaciar_cache()
+
+
+@pytest.fixture(autouse=True)
+def rasterizados(monkeypatch):
+    """Sin pdftoppm real: se guarda el PDF recibido y se devuelven dos páginas falsas."""
+    recibidos = []
+
+    def falso(pdf, espera_maxima=None):
+        recibidos.append(pdf)
+        return list(PAGINAS_FALSAS)
+
+    monkeypatch.setattr("app.vista_previa.pdf_a_imagenes", falso)
+    return recibidos
 
 
 @pytest.fixture()
@@ -52,17 +89,78 @@ def texto(docx: bytes) -> str:
     return " ".join(textos_de(docx))
 
 
-# ---------- empresa nueva ----------
+def imagenes_de(respuesta) -> list[Image.Image]:
+    """Decodifica las páginas de la respuesta; falla si alguna no es un JPEG válido."""
+    imagenes = []
+    for pagina in respuesta.json()["paginas"]:
+        assert pagina["imagen"].startswith(PREFIJO)
+        crudo = base64.b64decode(pagina["imagen"][len(PREFIJO):], validate=True)
+        assert crudo[:3] == b"\xff\xd8\xff"                       # firma JPEG
+        with Image.open(BytesIO(crudo)) as img:
+            img.verify()                                          # estructura válida
+        img = Image.open(BytesIO(crudo))
+        img.load()                                                # y decodifica entera
+        assert img.format == "JPEG"
+        imagenes.append(img.convert("RGB"))
+    return imagenes
+
+
+def pixeles_rojos(imagen: Image.Image) -> int:
+    return sum(1 for r, g, b in imagen.convert("RGB").getdata() if r > g + 40 and r > b + 40)
+
+
+# ---------- respuesta: imágenes, nunca PDF ----------
 
 def test_borrador_con_los_datos_escritos(client, tramite, entorno):
     r = pedir(client, tramite, CAMPOS_CONTRATO)
     assert r.status_code == 200, r.text
-    assert r.content == PDF_FALSO
-    assert r.headers["content-type"] == "application/pdf"
+    assert r.headers["content-type"].startswith("application/json")
     assert r.headers["cache-control"] == "no-store"
+    assert r.headers["x-content-type-options"] == "nosniff"
+    cuerpo = r.json()
+    assert cuerpo["total"] == 2 and [p["numero"] for p in cuerpo["paginas"]] == [1, 2]
     t = texto(entorno[0])
     assert "LF-01-2026" in t and "COMERCIAL PRUEBA SPA" in t and "76.123.456-0" in t
     assert "ana@prueba.cl" in t and "912345678" in t and "VENTA DE ARTÍCULOS DE OFICINA" in t
+
+
+def test_nunca_entrega_un_pdf(client, tramite):
+    r = pedir(client, tramite, CAMPOS_CONTRATO)
+    assert r.status_code == 200
+    assert "pdf" not in r.headers["content-type"]
+    assert "content-disposition" not in r.headers
+    assert b"%PDF" not in r.content
+    for pagina in r.json()["paginas"]:
+        assert not base64.b64decode(pagina["imagen"][len(PREFIJO):]).startswith(b"%PDF")
+
+
+def test_cada_pagina_es_un_jpeg_valido(client, tramite):
+    imagenes = imagenes_de(pedir(client, tramite, CAMPOS_CONTRATO))
+    assert len(imagenes) == 2 and all(img.size == (400, 520) for img in imagenes)
+
+
+def test_el_pdf_armado_es_el_que_se_pasa_a_imagenes(client, tramite, rasterizados):
+    pedir(client, tramite, CAMPOS_CONTRATO)
+    assert rasterizados == [PDF_FALSO]
+
+
+def test_la_marca_de_agua_queda_en_la_imagen(client, tramite):
+    sin_marca = Image.open(BytesIO(PAGINAS_FALSAS[0])).convert("RGB")
+    con_marca = imagenes_de(pedir(client, tramite, CAMPOS_CONTRATO))[0]
+    rojos = pixeles_rojos(con_marca)
+    assert pixeles_rojos(sin_marca) == 0
+    assert rojos > 0.02 * con_marca.width * con_marca.height         # repartida por la página, no un punto
+    # cubre la página entera: hay rojo en la mitad de arriba y en la de abajo
+    mitad = con_marca.height // 2
+    assert pixeles_rojos(con_marca.crop((0, 0, con_marca.width, mitad))) > 0
+    assert pixeles_rojos(con_marca.crop((0, mitad, con_marca.width, con_marca.height))) > 0
+
+
+def test_la_marca_de_agua_deja_leer_el_texto(client, tramite):
+    con_marca = imagenes_de(pedir(client, tramite, CAMPOS_CONTRATO))[0]
+    zona = con_marca.crop(TEXTO_NEGRO).convert("L")
+    promedio = sum(zona.getdata()) / (zona.width * zona.height)
+    assert promedio < 90                       # el "texto" negro sigue oscuro bajo la marca
 
 
 def test_no_guarda_nada(client, tramite, db_session):
@@ -144,6 +242,16 @@ def test_tramite_que_ya_envio_sus_datos(client, tramite, db_session):
     assert pedir(client, tramite, CAMPOS_CONTRATO).status_code == 409
 
 
+def test_tramite_con_datos_de_empresa_ya_enviados(client, tramite, db_session):
+    db_session.add(models.DatosEmpresaTramite(
+        id_tramite=tramite.id_tramite, solicitante_es_representante=True, consentimiento_aceptado=True,
+    ))
+    db_session.commit()
+    db_session.refresh(tramite)
+    r = pedir(client, tramite, CAMPOS_CONTRATO)
+    assert r.status_code == 409 and "paginas" not in r.text
+
+
 def test_sin_plantilla_el_mensaje_es_simple(client, tramite, db_session):
     db_session.query(models.PlantillaDocumento).delete()
     db_session.commit()
@@ -161,12 +269,22 @@ def test_si_falta_algo_del_agente_no_se_nombra_la_marca(client, tramite, db_sess
 
 # ---------- conversión, caché y cola ----------
 
-def test_mismos_datos_no_se_convierten_dos_veces(client, tramite, entorno):
-    assert pedir(client, tramite, CAMPOS_CONTRATO).status_code == 200
-    assert pedir(client, tramite, CAMPOS_CONTRATO).status_code == 200
-    assert len(entorno) == 1                                  # la segunda salió de la caché
+def test_mismos_datos_no_se_convierten_dos_veces(client, tramite, entorno, rasterizados):
+    primera = pedir(client, tramite, CAMPOS_CONTRATO)
+    segunda = pedir(client, tramite, CAMPOS_CONTRATO)
+    assert primera.status_code == segunda.status_code == 200
+    assert primera.json() == segunda.json()
+    assert len(entorno) == 1 and len(rasterizados) == 1           # la segunda salió de la caché
     assert pedir(client, tramite, {**CAMPOS_CONTRATO, "giro_principal": "Otro giro"}).status_code == 200
-    assert len(entorno) == 2                                  # datos distintos: se arma de nuevo
+    assert len(entorno) == 2 and len(rasterizados) == 2           # datos distintos: se arma de nuevo
+
+
+def test_la_cache_guarda_las_imagenes_ya_marcadas(client, tramite):
+    r = pedir(client, tramite, CAMPOS_CONTRATO)
+    (_vence, guardadas), = vista_previa._cache.values()
+    enviadas = [base64.b64decode(p["imagen"][len(PREFIJO):]) for p in r.json()["paginas"]]
+    assert list(guardadas) == enviadas and all(not g.startswith(b"%PDF") for g in guardadas)
+    assert vista_previa._cache_bytes == sum(len(g) for g in guardadas)
 
 
 def test_la_cache_vence(client, tramite, entorno, monkeypatch):
@@ -176,6 +294,7 @@ def test_la_cache_vence(client, tramite, entorno, monkeypatch):
     assert pedir(client, tramite, CAMPOS_CONTRATO).status_code == 200      # se guarda ya vencida
     assert pedir(client, tramite, CAMPOS_CONTRATO).status_code == 200
     assert len(entorno) == 3
+    assert vista_previa._cache_bytes == sum(sum(map(len, p)) for _v, p in vista_previa._cache.values())
 
 
 def test_la_cache_no_crece_sin_limite(client, tramite, monkeypatch):
@@ -183,6 +302,32 @@ def test_la_cache_no_crece_sin_limite(client, tramite, monkeypatch):
     for n in range(6):
         assert pedir(client, tramite, {**CAMPOS_CONTRATO, "giro_principal": f"Giro {n}"}).status_code == 200
     assert len(vista_previa._cache) == 3
+
+
+def test_la_cache_respeta_el_tope_de_bytes_y_saca_lo_mas_antiguo(monkeypatch):
+    monkeypatch.setattr(vista_previa, "CACHE_MAXIMO_BYTES", 250)
+    for n in range(4):
+        vista_previa._cache_guardar(f"c{n}", (b"x" * 60, b"y" * 40))          # 100 bytes cada una
+    assert list(vista_previa._cache) == ["c2", "c3"]                           # salieron c0 y c1
+    assert vista_previa._cache_bytes == 200
+    vista_previa._cache_leer("c2")                                              # c2 pasa a ser la más reciente
+    vista_previa._cache_guardar("c4", (b"z" * 100,))
+    assert list(vista_previa._cache) == ["c2", "c4"] and vista_previa._cache_bytes == 200
+
+
+def test_una_entrada_mas_grande_que_el_tope_no_se_guarda(monkeypatch):
+    monkeypatch.setattr(vista_previa, "CACHE_MAXIMO_BYTES", 50)
+    vista_previa._cache_guardar("grande", (b"x" * 51,))
+    assert len(vista_previa._cache) == 0 and vista_previa._cache_bytes == 0
+
+
+def test_la_cache_de_bytes_tambien_funciona_por_el_endpoint(client, tramite, monkeypatch):
+    peso = sum(len(marca_agua.marcar(p)) for p in PAGINAS_FALSAS)            # un borrador de 2 páginas
+    monkeypatch.setattr(vista_previa, "CACHE_MAXIMO_BYTES", int(peso * 2.5))   # caben ~2 borradores
+    for n in range(4):
+        assert pedir(client, tramite, {**CAMPOS_CONTRATO, "giro_principal": f"Giro {n}"}).status_code == 200
+    assert len(vista_previa._cache) == 2
+    assert vista_previa._cache_bytes <= vista_previa.CACHE_MAXIMO_BYTES
 
 
 def test_cola_llena_responde_503_con_reintento(client, tramite, monkeypatch):
@@ -194,11 +339,25 @@ def test_cola_llena_responde_503_con_reintento(client, tramite, monkeypatch):
     assert r.status_code == 503 and r.headers["retry-after"] == "5"
 
 
+def test_cola_llena_al_pasar_a_imagenes_tambien_es_503(client, tramite, monkeypatch):
+    def ocupado(pdf, espera_maxima=None):
+        raise ServidorOcupado("Hay muchas solicitudes en este momento. Intenta de nuevo en unos segundos.")
+
+    monkeypatch.setattr("app.vista_previa.pdf_a_imagenes", ocupado)
+    r = pedir(client, tramite, CAMPOS_CONTRATO)
+    assert r.status_code == 503 and r.headers["retry-after"] == "5"
+    assert len(vista_previa._cache) == 0
+
+
 def test_la_espera_en_cola_es_corta(client, tramite, monkeypatch):
     pedidos = []
     monkeypatch.setattr("app.vista_previa.docx_a_pdf", lambda docx, espera_maxima=None: pedidos.append(espera_maxima) or PDF_FALSO)
+    monkeypatch.setattr(
+        "app.vista_previa.pdf_a_imagenes",
+        lambda pdf, espera_maxima=None: pedidos.append(espera_maxima) or list(PAGINAS_FALSAS),
+    )
     pedir(client, tramite, CAMPOS_CONTRATO)
-    assert pedidos == [vista_previa.ESPERA_MAXIMA_SEGUNDOS] and vista_previa.ESPERA_MAXIMA_SEGUNDOS <= 10
+    assert pedidos == [vista_previa.ESPERA_MAXIMA_SEGUNDOS] * 2 and vista_previa.ESPERA_MAXIMA_SEGUNDOS <= 10
 
 
 def test_falla_la_conversion_sin_filtrar_detalles(client, tramite, monkeypatch):
@@ -208,6 +367,51 @@ def test_falla_la_conversion_sin_filtrar_detalles(client, tramite, monkeypatch):
     monkeypatch.setattr("app.vista_previa.docx_a_pdf", fallar)
     r = pedir(client, tramite, CAMPOS_CONTRATO)
     assert r.status_code == 502 and "secreto interno" not in r.text
+    assert r.json()["detail"].startswith("No pudimos preparar el borrador")
+
+
+def test_demasiadas_paginas_es_error_y_queda_en_el_registro(client, tramite, monkeypatch, caplog):
+    def largo(pdf, espera_maxima=None):
+        raise ErrorConversion("El documento tiene demasiadas páginas para mostrarlo.", detalle="más de 10 páginas")
+
+    monkeypatch.setattr("app.vista_previa.pdf_a_imagenes", largo)
+    with caplog.at_level(logging.ERROR, logger="easyoffice.vista_previa"):
+        r = pedir(client, tramite, CAMPOS_CONTRATO)
+    assert r.status_code == 502 and "páginas" not in r.text and "paginas" not in r.text
+    assert r.json()["detail"].startswith("No pudimos preparar el borrador")
+    assert "más de 10 páginas" in caplog.text
+    assert len(vista_previa._cache) == 0
+
+
+def test_imagen_corrupta_da_502_generico(client, tramite, monkeypatch):
+    monkeypatch.setattr("app.vista_previa.pdf_a_imagenes", lambda pdf, espera_maxima=None: [b"\xff\xd8\xff no es jpeg"])
+    r = pedir(client, tramite, CAMPOS_CONTRATO)
+    assert r.status_code == 502 and r.json()["detail"].startswith("No pudimos preparar el borrador")
+
+
+# ---------- de punta a punta con pdftoppm real ----------
+
+@pytest.mark.skipif(shutil.which("pdftoppm") is None, reason="pdftoppm no instalado (paquete poppler-utils)")
+def test_con_pdftoppm_real_la_marca_agrega_rojo(client, tramite, monkeypatch):
+    # PDF real de 2 páginas carta (612x792 pt) hecho con Pillow; LibreOffice sigue reemplazado.
+    hojas = [Image.new("RGB", (612, 792), "white") for _ in range(2)]
+    for hoja in hojas:
+        ImageDraw.Draw(hoja).rectangle((60, 60, 550, 100), fill="black")
+    buf = BytesIO()
+    hojas[0].save(buf, format="PDF", save_all=True, append_images=hojas[1:], resolution=72)
+    pdf_real = buf.getvalue()
+    monkeypatch.setattr("app.vista_previa.docx_a_pdf", lambda docx, espera_maxima=None: pdf_real)
+    monkeypatch.setattr("app.vista_previa.pdf_a_imagenes", convertir_pdf.pdf_a_imagenes)
+
+    r = pedir(client, tramite, CAMPOS_CONTRATO)
+    assert r.status_code == 200, r.text
+    imagenes = imagenes_de(r)
+    sin_marca = [Image.open(BytesIO(j)).convert("RGB") for j in convertir_pdf.pdf_a_imagenes(pdf_real)]
+    assert r.json()["total"] == 2 and len(imagenes) == 2
+    for con, sin in zip(imagenes, sin_marca):
+        assert abs(con.width - 935) <= 2 and abs(con.height - 1210) <= 2     # carta a 110 dpi
+        assert con.size == sin.size
+        assert pixeles_rojos(sin) == 0 and pixeles_rojos(con) > 0.02 * con.width * con.height
 
 
 # ---------- límites de uso ----------
