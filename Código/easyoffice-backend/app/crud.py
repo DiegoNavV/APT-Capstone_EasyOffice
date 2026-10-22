@@ -695,3 +695,118 @@ def reporte_tramites(db: Session) -> schemas.ReporteTramitesOut:
         por_servicio=[schemas.ReporteConteoOut(etiqueta=s, cantidad=c) for s, c in por_servicio],
         por_agente=[schemas.ReporteConteoOut(etiqueta=a, cantidad=c) for a, c in por_agente],
     )
+
+
+# ---------------------------------------------------------------------------
+# Listado de clientes del panel (agentes y administradores)
+# ---------------------------------------------------------------------------
+
+def _filtro_busqueda_cliente(texto: str):
+    """Igual que _filtro_busqueda, pero sin el código de trámite: acá no hay
+    ningún Tramite en el FROM de la consulta."""
+    patron = f"%{_escapar_like(texto.strip())}%"
+    patron_rut = f"%{_escapar_like(normalizar_rut(texto) or texto.strip())}%"
+    return or_(
+        models.Cliente.nombre.ilike(patron, escape="\\"),
+        models.Cliente.rut.ilike(patron_rut, escape="\\"),
+    )
+
+
+def listar_clientes(
+    db: Session,
+    q: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> schemas.ClientesPaginaOut:
+    """Clientes con su cantidad de trámites, los más recientes primero.
+    Filtro opcional por nombre o RUT."""
+    conteo = (
+        db.query(
+            models.Tramite.id_cliente.label("id_cliente"),
+            func.count(models.Tramite.id_tramite).label("cantidad"),
+        )
+        .group_by(models.Tramite.id_cliente)
+        .subquery()
+    )
+
+    base = db.query(models.Cliente, func.coalesce(conteo.c.cantidad, 0)).outerjoin(
+        conteo, conteo.c.id_cliente == models.Cliente.id_cliente
+    )
+    if q and q.strip():
+        base = base.filter(_filtro_busqueda_cliente(q))
+
+    total = base.count()
+    filas = (
+        base.order_by(models.Cliente.fecha_creacion.desc(), models.Cliente.id_cliente.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return schemas.ClientesPaginaOut(
+        total=total,
+        items=[
+            schemas.ClienteResumenOut(
+                id_cliente=cliente.id_cliente,
+                nombre=cliente.nombre,
+                rut=cliente.rut,
+                email=cliente.email,
+                telefono=cliente.telefono,
+                cantidad_tramites=cantidad,
+                fecha_creacion=cliente.fecha_creacion,
+            )
+            for cliente, cantidad in filas
+        ],
+    )
+
+
+def obtener_cliente_detalle(db: Session, id_cliente: int) -> schemas.ClienteDetalleOut | None:
+    """Ficha de cliente 360°: datos de contacto, las empresas que vinculó en
+    alguno de sus trámites, y el historial completo de trámites. None si el
+    cliente no existe -- el router responde 404."""
+    cliente = db.get(models.Cliente, id_cliente)
+    if not cliente:
+        return None
+
+    tramites = (
+        db.query(models.Tramite)
+        .filter(models.Tramite.id_cliente == id_cliente)
+        .options(
+            joinedload(models.Tramite.servicio),
+            joinedload(models.Tramite.usuario_responsable),
+        )
+        .order_by(models.Tramite.fecha_creacion.desc(), models.Tramite.id_tramite.desc())
+        .all()
+    )
+
+    empresas = (
+        db.query(models.Empresa)
+        .join(models.Tramite, models.Tramite.id_empresa == models.Empresa.id_empresa)
+        .filter(models.Tramite.id_cliente == id_cliente)
+        .distinct()
+        .all()
+    )
+
+    return schemas.ClienteDetalleOut(
+        id_cliente=cliente.id_cliente,
+        nombre=cliente.nombre,
+        rut=cliente.rut,
+        email=cliente.email,
+        telefono=cliente.telefono,
+        fecha_creacion=cliente.fecha_creacion,
+        empresas=[schemas.EmpresaResumenOut.model_validate(e) for e in empresas],
+        tramites=[
+            schemas.TramiteClienteOut(
+                id_tramite=t.id_tramite,
+                codigo_seguimiento=t.codigo_seguimiento,
+                nombre_servicio=t.servicio.nombre,
+                estado_actual=t.estado_actual,
+                nombre_agente=t.usuario_responsable.nombre if t.usuario_responsable else None,
+                fecha_creacion=t.fecha_creacion,
+                fecha_actualizacion=t.fecha_actualizacion,
+                tiene_documento=bool(t.ruta_documento_generado),
+                folio=t.folio,
+            )
+            for t in tramites
+        ],
+    )

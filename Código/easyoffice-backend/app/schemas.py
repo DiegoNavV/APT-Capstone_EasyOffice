@@ -273,6 +273,60 @@ class TramitesPaginaOut(BaseModel):
     total: int  # total que cumple los filtros (sin paginar)
 
 
+# ---------- Listado de clientes del panel (requiere login) ----------
+
+class ClienteResumenOut(BaseModel):
+    id_cliente: int
+    nombre: str
+    rut: Optional[str] = None
+    email: Optional[str] = None
+    telefono: Optional[str] = None
+    cantidad_tramites: int
+    fecha_creacion: datetime
+
+
+class ClientesPaginaOut(BaseModel):
+    items: list[ClienteResumenOut]
+    total: int  # total que cumple el filtro (sin paginar)
+
+
+# ---------- Ficha de cliente 360° (requiere login) ----------
+
+class EmpresaResumenOut(BaseModel):
+    """Empresa vinculada al cliente a través de alguno de sus trámites. A diferencia de EmpresaOpcionOut (que la oculta a propósito
+    en el selector de conversión), acá `datos` sí se muestra completa: es justo el propósito de la ficha 360°."""
+    id_empresa: int
+    rut_empresa: str
+    razon_social: str
+    datos: dict[str, Any] = {}
+
+    class Config:
+        from_attributes = True
+
+
+class TramiteClienteOut(BaseModel):
+    id_tramite: int
+    codigo_seguimiento: str
+    nombre_servicio: str
+    estado_actual: str
+    nombre_agente: Optional[str] = None
+    fecha_creacion: datetime
+    fecha_actualizacion: datetime
+    tiene_documento: bool = False
+    folio: Optional[str] = None
+
+
+class ClienteDetalleOut(BaseModel):
+    id_cliente: int
+    nombre: str
+    rut: Optional[str] = None
+    email: Optional[str] = None
+    telefono: Optional[str] = None
+    fecha_creacion: datetime
+    empresas: list[EmpresaResumenOut] = []
+    tramites: list[TramiteClienteOut] = []
+
+
 class TramitesKpisOut(BaseModel):
     pendientes_datos: int  # el cliente aún no completa sus datos
     en_proceso: int        # firma o revisión en curso
