@@ -3,6 +3,7 @@ from collections.abc import Iterator
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.core.config import get_settings
 
@@ -12,6 +13,10 @@ def _crear_engine():
     url = settings.database_url
     if url.startswith("sqlite"):
         connect_args = {"check_same_thread": False}
+        if url in ("sqlite://", "sqlite:///:memory:"):
+            # Base en memoria (tests): una sola conexión compartida entre hilos;
+            # si no, cada conexión vería una base vacía.
+            return create_engine(url, connect_args=connect_args, poolclass=StaticPool)
     else:
         # Sin esto, una base de datos caída deja la petición colgada.
         connect_args = {"connect_timeout": settings.dependency_timeout_seconds}

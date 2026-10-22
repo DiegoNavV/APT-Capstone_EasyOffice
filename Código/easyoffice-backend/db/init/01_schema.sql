@@ -27,13 +27,11 @@ CREATE TABLE cliente (
 
 -- =========================
 -- TABLA: usuario
--- (admins y agentes; id_cliente queda nullable y sin uso por ahora,
---  reservado para cuando un cliente pueda tener cuenta propia a futuro)
+-- (admins y agentes; los clientes no tienen cuenta propia)
 -- =========================
 CREATE TABLE usuario (
     id_usuario      SERIAL PRIMARY KEY,
     id_rol          INTEGER NOT NULL REFERENCES rol(id_rol),
-    id_cliente      INTEGER REFERENCES cliente(id_cliente),
     nombre          VARCHAR(150) NOT NULL,
     email           VARCHAR(150) NOT NULL UNIQUE,
     password_hash   VARCHAR(255) NOT NULL,
@@ -95,6 +93,8 @@ CREATE TABLE plantilla_documento (
 -- Cada subida es una version nueva (no se borra ninguna) y solo una puede estar activa por servicio.
 CREATE UNIQUE INDEX uq_plantilla_servicio_version ON plantilla_documento(id_servicio, version);
 CREATE UNIQUE INDEX uq_plantilla_activa_por_servicio ON plantilla_documento(id_servicio) WHERE activa;
+-- id_servicio se filtra en cada subida/activacion de plantilla (app/plantillas.py, app/documentos.py).
+CREATE INDEX idx_plantilla_documento_id_servicio ON plantilla_documento(id_servicio);
 
 -- =========================
 -- TABLA: solicitud_contacto
@@ -187,9 +187,19 @@ CREATE TABLE tramite (
     fecha_actualizacion     TIMESTAMP NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_tramite_codigo_seguimiento ON tramite(codigo_seguimiento);
+-- codigo_seguimiento ya es UNIQUE arriba (Postgres crea su propio indice);
+-- no se repite como indice aparte.
 CREATE UNIQUE INDEX uq_tramite_folio ON tramite(folio);
 CREATE INDEX idx_tramite_id_sucursal ON tramite(id_sucursal);
+
+-- Postgres no indexa automaticamente las columnas FK (a diferencia de MySQL).
+-- Estas 4 se filtran o se unen hoy en el codigo (ver app/crud.py) -- sin indice,
+-- cada consulta hace un seq scan sobre tramite, y cada UPDATE/DELETE en cliente,
+-- servicio_contratado, usuario o empresa escanea toda la tabla para revisar la FK.
+CREATE INDEX idx_tramite_id_cliente ON tramite(id_cliente);
+CREATE INDEX idx_tramite_id_servicio ON tramite(id_servicio);
+CREATE INDEX idx_tramite_id_usuario_responsable ON tramite(id_usuario_responsable);
+CREATE INDEX idx_tramite_id_empresa ON tramite(id_empresa);
 
 ALTER TABLE solicitud_contacto
     ADD CONSTRAINT fk_solicitud_tramite_generado
@@ -228,3 +238,73 @@ CREATE TABLE datos_empresa_tramite (
     consentimiento_aceptado      BOOLEAN NOT NULL CHECK (consentimiento_aceptado),
     fecha_envio                  TIMESTAMP NOT NULL DEFAULT now()
 );
+
+-- =========================
+-- TRIGGERS (Nivel 2 del pulido del esquema, 2026-10-22)
+-- Ninguno de estos lo aplica hoy la app en Python -- son la ultima linea de
+-- defensa a nivel de base de datos, por si alguna vez se escribe sin pasar
+-- por el ORM (un script, una migracion de datos, etc).
+-- =========================
+
+-- usuario.email y cliente.rut son UNIQUE: se normalizan a minusculas + trim
+-- antes de guardar para que esa unicidad sea realmente case-insensitive y no
+-- se puedan crear "duplicados" solo por mayusculas o espacios de copiar/pegar.
+CREATE OR REPLACE FUNCTION normalizar_usuario_email()
+RETURNS trigger AS $$
+BEGIN
+    IF NEW.email IS NOT NULL THEN
+        NEW.email := lower(trim(NEW.email));
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_usuario_normalizar_email
+BEFORE INSERT OR UPDATE OF email ON usuario
+FOR EACH ROW
+EXECUTE FUNCTION normalizar_usuario_email();
+
+CREATE OR REPLACE FUNCTION normalizar_cliente_rut()
+RETURNS trigger AS $$
+BEGIN
+    IF NEW.rut IS NOT NULL THEN
+        NEW.rut := lower(trim(NEW.rut));
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_cliente_normalizar_rut
+BEFORE INSERT OR UPDATE OF rut ON cliente
+FOR EACH ROW
+EXECUTE FUNCTION normalizar_cliente_rut();
+
+-- historial_estado es append-only: no permite insertar el mismo estado dos
+-- veces seguidas para el mismo tramite (ruido de auditoria por reintentos o
+-- bugs de la app, no un cambio de negocio real). No se aplico el trigger de
+-- "id_usuario_responsable solo puede ser agente" que proponia el diseno
+-- original porque routers/solicitudes.py permite a proposito que un
+-- administrador convierta una solicitud y quede como responsable.
+CREATE OR REPLACE FUNCTION historial_estado_no_duplicado()
+RETURNS trigger AS $$
+DECLARE
+    v_ultimo_estado VARCHAR(30);
+BEGIN
+    SELECT he.estado INTO v_ultimo_estado
+    FROM historial_estado he
+    WHERE he.id_tramite = NEW.id_tramite
+    ORDER BY he.fecha DESC, he.id_historial DESC
+    LIMIT 1;
+
+    IF v_ultimo_estado IS NOT NULL AND v_ultimo_estado = NEW.estado THEN
+        RAISE EXCEPTION 'No se puede repetir el mismo estado (%) dos veces seguidas para el tramite %', NEW.estado, NEW.id_tramite;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_historial_estado_no_duplicado
+BEFORE INSERT ON historial_estado
+FOR EACH ROW
+EXECUTE FUNCTION historial_estado_no_duplicado();

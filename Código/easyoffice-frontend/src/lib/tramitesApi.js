@@ -53,3 +53,9 @@ export async function descargarDocumento({ accessToken, idTramite }) {
   }
   return res.blob()
 }
+
+// Conteos agregados para la vista de Reportes: { puede_ver, total, por_estado, por_servicio, por_agente }.
+// `puede_ver` es false para quienes no son administrador (el panel muestra solo un aviso).
+export function obtenerReporteTramites({ accessToken }) {
+  return pedir('/api/tramites/reporte', { accessToken })
+}

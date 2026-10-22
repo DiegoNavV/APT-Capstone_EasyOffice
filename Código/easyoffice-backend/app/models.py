@@ -157,16 +157,17 @@ class Tramite(Base):
     __tablename__ = "tramite"
 
     id_tramite = Column(Integer, primary_key=True, index=True)
-    id_cliente = Column(Integer, ForeignKey("cliente.id_cliente"), nullable=False)
-    id_servicio = Column(Integer, ForeignKey("servicio_contratado.id_servicio"), nullable=False)
-    id_usuario_responsable = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=True)
+    id_cliente = Column(Integer, ForeignKey("cliente.id_cliente"), nullable=False, index=True)
+    id_servicio = Column(Integer, ForeignKey("servicio_contratado.id_servicio"), nullable=False, index=True)
+    id_usuario_responsable = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=True, index=True)
     id_solicitud_origen = Column(Integer, ForeignKey("solicitud_contacto.id_solicitud"), nullable=True)
-    id_empresa = Column(Integer, ForeignKey("empresa.id_empresa"), nullable=True)
+    id_empresa = Column(Integer, ForeignKey("empresa.id_empresa"), nullable=True, index=True)
     id_sucursal = Column(Integer, ForeignKey("sucursal.id_sucursal"), nullable=True)
     # Condiciones del contrato que ingresa el agente (ver crud al convertir una solicitud).
     folio = Column(String(20), unique=True)
     condiciones = Column(JSON().with_variant(JSONB(), "postgresql"))
-    codigo_seguimiento = Column(String(8), nullable=False, unique=True, index=True)
+    # unique=True ya crea su propio indice -- no se repite index=True aparte.
+    codigo_seguimiento = Column(String(8), nullable=False, unique=True)
     estado_actual = Column(String(30), nullable=False, default="generado")
     ruta_documento_generado = Column(String(255))
     fecha_creacion = Column(TIMESTAMP, server_default=func.now())
@@ -229,7 +230,7 @@ class PlantillaDocumento(Base):
     )
 
     id_plantilla = Column(Integer, primary_key=True, index=True)
-    id_servicio = Column(Integer, ForeignKey("servicio_contratado.id_servicio"), nullable=False)
+    id_servicio = Column(Integer, ForeignKey("servicio_contratado.id_servicio"), nullable=False, index=True)
     nombre = Column(String(150), nullable=False)
     version = Column(String(20), nullable=False, default="1")
     ruta_archivo = Column(String(255), nullable=False)

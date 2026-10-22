@@ -656,3 +656,42 @@ def resumen_tramites(db: Session) -> schemas.TramitesResumenOut:
             for u in agentes
         ],
     )
+
+
+def reporte_tramites(db: Session) -> schemas.ReporteTramitesOut:
+    """Conteos agregados para la vista de Reportes (exclusiva de administradores,
+    el router es quien verifica el permiso). Si todavía no hay trámites, devuelve
+    los desgloses vacíos -- el panel es quien decide mostrar el aviso de "sin
+    suficiente información"."""
+    total = db.query(func.count(models.Tramite.id_tramite)).scalar() or 0
+    if not total:
+        return schemas.ReporteTramitesOut(puede_ver=True, total=0)
+
+    por_estado = (
+        db.query(models.Tramite.estado_actual, func.count(models.Tramite.id_tramite))
+        .group_by(models.Tramite.estado_actual)
+        .order_by(func.count(models.Tramite.id_tramite).desc())
+        .all()
+    )
+    por_servicio = (
+        db.query(models.ServicioContratado.nombre, func.count(models.Tramite.id_tramite))
+        .join(models.Tramite, models.Tramite.id_servicio == models.ServicioContratado.id_servicio)
+        .group_by(models.ServicioContratado.nombre)
+        .order_by(func.count(models.Tramite.id_tramite).desc())
+        .all()
+    )
+    por_agente = (
+        db.query(models.Usuario.nombre, func.count(models.Tramite.id_tramite))
+        .join(models.Tramite, models.Tramite.id_usuario_responsable == models.Usuario.id_usuario)
+        .group_by(models.Usuario.nombre)
+        .order_by(func.count(models.Tramite.id_tramite).desc())
+        .all()
+    )
+
+    return schemas.ReporteTramitesOut(
+        puede_ver=True,
+        total=total,
+        por_estado=[schemas.ReporteConteoOut(etiqueta=e, cantidad=c) for e, c in por_estado],
+        por_servicio=[schemas.ReporteConteoOut(etiqueta=s, cantidad=c) for s, c in por_servicio],
+        por_agente=[schemas.ReporteConteoOut(etiqueta=a, cantidad=c) for a, c in por_agente],
+    )
