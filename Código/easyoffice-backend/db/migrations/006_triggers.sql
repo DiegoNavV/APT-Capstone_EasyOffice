@@ -27,11 +27,15 @@ BEFORE INSERT OR UPDATE OF email ON usuario
 FOR EACH ROW
 EXECUTE FUNCTION normalizar_usuario_email();
 
+-- El RUT se normaliza a MAYUSCULAS, no a minusculas: la app guarda la K del
+-- digito verificador en mayuscula (normalizar_rut en app/utils.py) y busca
+-- clientes por comparacion exacta (crud.py). Con minusculas, un RUT terminado
+-- en K no se reconoceria y se crearia un cliente duplicado.
 CREATE OR REPLACE FUNCTION normalizar_cliente_rut()
 RETURNS trigger AS $$
 BEGIN
     IF NEW.rut IS NOT NULL THEN
-        NEW.rut := lower(trim(NEW.rut));
+        NEW.rut := upper(trim(NEW.rut));
     END IF;
     RETURN NEW;
 END;
@@ -71,6 +75,6 @@ EXECUTE FUNCTION historial_estado_no_duplicado();
 -- Normaliza los datos que ya existan, para que queden consistentes con las
 -- filas nuevas que estos triggers van a normalizar de aqui en adelante.
 UPDATE usuario SET email = lower(trim(email)) WHERE email IS NOT NULL AND email <> lower(trim(email));
-UPDATE cliente SET rut = lower(trim(rut)) WHERE rut IS NOT NULL AND rut <> lower(trim(rut));
+UPDATE cliente SET rut = upper(trim(rut)) WHERE rut IS NOT NULL AND rut <> upper(trim(rut));
 
 COMMIT;
