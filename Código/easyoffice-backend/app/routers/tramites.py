@@ -1,9 +1,10 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
-from app import campos_servicio, crud, models, schemas
+from app import campos_servicio, crud, models, schemas, vista_previa
 from app.database import get_db
 from app.seguridad import get_usuario_actual, limiter
 
@@ -116,4 +117,66 @@ def enviar_datos_cliente(
         nombre_servicio=tramite.servicio.nombre,
         estado_actual=tramite.estado_actual,
         documento_disponible=crud.documento_disponible(tramite),
+    )
+
+
+# ---------- Vista previa del borrador (pública) ----------
+# Convertir a PDF es lo caro del sistema, así que se limita en capas: por IP, por
+# código y en total. Un ataque con muchas IPs distintas topa con el límite total.
+
+def _clave_ip(request: Request) -> str:
+    return get_remote_address(request)
+
+
+def _clave_codigo(request: Request) -> str:
+    return "codigo:" + str(request.path_params.get("codigo", "")).strip().upper()
+
+
+def _clave_total(request: Request) -> str:
+    return "vista-previa-total"
+
+
+@router.post("/codigo/{codigo}/vista-previa")
+@limiter.limit("10/hour", key_func=_clave_codigo)
+@limiter.limit("30/minute", key_func=_clave_total)
+@limiter.limit("15/minute", key_func=_clave_ip)
+def vista_previa_cliente(
+    request: Request,
+    codigo: str,
+    entrada: schemas.VistaPreviaIn,
+    db: Session = Depends(get_db),
+):
+    """
+    Público — el cliente ve el borrador de su documento ANTES de enviar sus datos.
+
+    Recibe lo que ya escribió y devuelve un PDF; no guarda nada. Lo que la empresa ya tenía registrado sale enmascarado. Responde 
+    422 si hay campos con errores ({"mensaje", "errores"}), 409 si el borrador no está disponible, 503 si hay demasiadas conversiones 
+    en cola y 429 si se pasa de los límites: 15 por minuto por IP, 30 por minuto en total y 10 por hora por código.
+    """
+    if len(codigo.strip()) != 8:
+        raise HTTPException(status_code=400, detail="El código debe tener 8 caracteres.")
+
+    tramite = crud.obtener_tramite_por_codigo(db, codigo)
+    if not tramite:
+        raise HTTPException(status_code=404, detail="No encontramos un trámite con ese código.")
+
+    try:
+        pdf = vista_previa.generar_borrador(db, tramite, entrada.campos)
+    except campos_servicio.ErrorCampos as e:
+        raise HTTPException(
+            status_code=422,
+            detail={"mensaje": "Revisa los campos marcados.", "errores": e.errores},
+        )
+    except vista_previa.VistaPreviaNoDisponible as e:
+        cabeceras = {"Retry-After": "5"} if e.codigo_http == 503 else None
+        raise HTTPException(status_code=e.codigo_http, detail=e.mensaje, headers=cabeceras)
+
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'inline; filename="borrador.pdf"',
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )

@@ -225,6 +225,12 @@ class EnvioDatosIn(BaseModel):
     consentimiento_aceptado: StrictBool
     acepta_no_editar: StrictBool
 
+class VistaPreviaIn(BaseModel):
+    """Lo que el cliente ya escribió, para ver el borrador antes de enviar. No se
+    guarda nada y no exige las confirmaciones (esas son del envío definitivo)."""
+    model_config = {"extra": "forbid"}
+
+    campos: dict[str, Any] = Field(default_factory=dict)
 
 # ---------- Seguimiento público por código ----------
 
