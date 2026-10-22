@@ -1,6 +1,8 @@
+import base64
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
@@ -162,7 +164,9 @@ def vista_previa_cliente(
     """
     Público — el cliente ve el borrador de su documento ANTES de enviar sus datos.
 
-    Recibe lo que ya escribió y devuelve un PDF; no guarda nada. Lo que la empresa ya tenía registrado sale enmascarado. Responde 
+    Recibe lo que ya escribió y devuelve las páginas como imágenes JPEG con marca de agua, NUNCA un PDF:
+    {"total": N, "paginas": [{"numero": 1, "imagen": "data:image/jpeg;base64,..."}, ...]}. No guarda nada. Lo que la empresa ya
+    tenía registrado sale enmascarado. Responde
     422 si hay campos con errores ({"mensaje", "errores"}), 409 si el borrador no está disponible, 503 si hay demasiadas conversiones 
     en cola y 429 si se pasa de los límites: 15 por minuto por IP, 30 por minuto en total y 10 por hora por código.
     """
@@ -174,7 +178,7 @@ def vista_previa_cliente(
         raise HTTPException(status_code=404, detail="No encontramos un trámite con ese código.")
 
     try:
-        pdf = vista_previa.generar_borrador(db, tramite, entrada.campos)
+        imagenes = vista_previa.generar_borrador(db, tramite, entrada.campos)
     except campos_servicio.ErrorCampos as e:
         raise HTTPException(
             status_code=422,
@@ -184,11 +188,13 @@ def vista_previa_cliente(
         cabeceras = {"Retry-After": "5"} if e.codigo_http == 503 else None
         raise HTTPException(status_code=e.codigo_http, detail=e.mensaje, headers=cabeceras)
 
-    return Response(
-        content=pdf,
-        media_type="application/pdf",
+    paginas = [
+        {"numero": n, "imagen": "data:image/jpeg;base64," + base64.b64encode(imagen).decode("ascii")}
+        for n, imagen in enumerate(imagenes, start=1)
+    ]
+    return JSONResponse(
+        content={"total": len(paginas), "paginas": paginas},
         headers={
-            "Content-Disposition": 'inline; filename="borrador.pdf"',
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
         },

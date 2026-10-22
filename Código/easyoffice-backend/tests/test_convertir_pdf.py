@@ -1,6 +1,6 @@
 """
-Conversión de Word a PDF con LibreOffice. Si LibreOffice no está instalado en el equipo donde corren las pruebas, estas pruebas 
-se omiten (en Docker sí está).
+Conversión de Word a PDF con LibreOffice, y de PDF a imágenes con pdftoppm. Si alguno no está instalado en el equipo donde
+corren las pruebas, las pruebas que lo necesitan se omiten (en Docker sí están).
 """
 import shutil
 import threading
@@ -10,7 +10,7 @@ from io import BytesIO
 import pytest
 
 from app import convertir_pdf
-from app.convertir_pdf import ErrorConversion, ServidorOcupado, docx_a_pdf
+from app.convertir_pdf import ErrorConversion, ServidorOcupado, docx_a_pdf, pdf_a_imagenes
 from app.rellenar_docx import rellenar_docx
 
 requiere_libreoffice = pytest.mark.skipif(shutil.which("soffice") is None, reason="LibreOffice no instalado")
@@ -117,3 +117,88 @@ def test_el_archivo_invalido_no_ocupa_la_cola(monkeypatch):
     with pytest.raises(ErrorConversion) as exc:       # se rechaza antes de esperar turno
         docx_a_pdf(b"no soy un word", espera_maxima=0.05)
     assert not isinstance(exc.value, ServidorOcupado)
+
+
+# ---------- PDF a imágenes (pdftoppm) ----------
+
+requiere_pdftoppm = pytest.mark.skipif(shutil.which("pdftoppm") is None, reason="pdftoppm no instalado (poppler-utils)")
+
+
+def pdf_de_paginas(cantidad: int) -> bytes:
+    """PDF real de `cantidad` páginas carta (612x792 pt), hecho con Pillow."""
+    from PIL import Image
+
+    hojas = [Image.new("RGB", (612, 792), (255, 255, 255 - n)) for n in range(cantidad)]
+    buf = BytesIO()
+    hojas[0].save(buf, format="PDF", save_all=True, append_images=hojas[1:], resolution=72)
+    return buf.getvalue()
+
+
+@requiere_pdftoppm
+def test_cada_pagina_sale_como_jpeg_a_110_dpi():
+    from PIL import Image
+
+    paginas = pdf_a_imagenes(pdf_de_paginas(3))
+    assert len(paginas) == 3
+    for jpeg in paginas:
+        assert jpeg[:3] == b"\xff\xd8\xff"
+        with Image.open(BytesIO(jpeg)) as img:
+            assert img.format == "JPEG"
+            assert abs(img.width - 935) <= 2 and abs(img.height - 1210) <= 2
+
+
+@requiere_pdftoppm
+def test_las_paginas_salen_en_orden_aunque_sean_mas_de_nueve():
+    from PIL import Image
+
+    paginas = pdf_a_imagenes(pdf_de_paginas(convertir_pdf.MAX_PAGINAS_BORRADOR))
+    assert len(paginas) == convertir_pdf.MAX_PAGINAS_BORRADOR
+    azules = [Image.open(BytesIO(p)).convert("RGB").getpixel((5, 5))[2] for p in paginas]
+    assert azules == sorted(azules, reverse=True)       # cada hoja tiene un poco menos de azul que la anterior
+
+
+@requiere_pdftoppm
+def test_mas_paginas_que_el_maximo_es_error_no_un_borrador_parcial():
+    with pytest.raises(ErrorConversion) as exc:
+        pdf_a_imagenes(pdf_de_paginas(convertir_pdf.MAX_PAGINAS_BORRADOR + 1))
+    assert "demasiadas páginas" in str(exc.value) and "más de 10" in exc.value.detalle
+
+
+@requiere_pdftoppm
+def test_pdf_corrupto_da_error_simple():
+    with pytest.raises(ErrorConversion) as exc:
+        pdf_a_imagenes(b"%PDF-1.4 esto no es un pdf de verdad")
+    assert "No se pudo convertir el PDF" in str(exc.value)
+
+
+def test_sin_pdftoppm_instalado(monkeypatch):
+    monkeypatch.setenv("PDFTOPPM_BIN", "programa-que-no-existe")
+    with pytest.raises(ErrorConversion) as exc:
+        pdf_a_imagenes(b"%PDF-1.4 x")
+    assert "no está instalado" in str(exc.value)
+
+
+def test_lo_que_no_es_pdf_no_ocupa_la_cola(monkeypatch):
+    cupo = threading.BoundedSemaphore(1)
+    cupo.acquire()
+    monkeypatch.setattr(convertir_pdf, "_CUPO", cupo)
+    with pytest.raises(ErrorConversion) as exc:
+        pdf_a_imagenes(b"no soy un pdf", espera_maxima=0.05)
+    assert not isinstance(exc.value, ServidorOcupado)
+
+
+def test_pasar_a_imagenes_comparte_la_cola(monkeypatch):
+    cupo = threading.BoundedSemaphore(1)
+    cupo.acquire()                                    # LibreOffice ocupa el único lugar
+    monkeypatch.setattr(convertir_pdf, "_CUPO", cupo)
+    with pytest.raises(ServidorOcupado):
+        pdf_a_imagenes(b"%PDF-1.4 x", espera_maxima=0.05)
+
+
+def test_el_cupo_se_libera_aunque_falle_pasar_a_imagenes(monkeypatch):
+    cupo = threading.BoundedSemaphore(1)
+    monkeypatch.setattr(convertir_pdf, "_CUPO", cupo)
+    monkeypatch.setenv("PDFTOPPM_BIN", "programa-que-no-existe")
+    with pytest.raises(ErrorConversion):
+        pdf_a_imagenes(b"%PDF-1.4 x")
+    assert cupo.acquire(blocking=False)

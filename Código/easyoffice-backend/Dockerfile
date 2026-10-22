@@ -2,9 +2,11 @@ FROM python:3.12-slim
 
 # LibreOffice (solo el procesador de textos) para convertir los Word a PDF. fonts-liberation trae "Liberation Serif", que ocupa 
 # el mismo espacio que Times New Roman; asi el PDF mantiene el mismo largo y saltos de pagina que el contrato en Word.
+# poppler-utils trae pdftoppm, que pasa el PDF del borrador a imagenes (el cliente nunca recibe el PDF).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libreoffice-writer \
+        poppler-utils \
         fonts-liberation \
         fonts-dejavu-core \
         fontconfig \
