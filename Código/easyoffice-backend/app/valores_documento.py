@@ -18,6 +18,7 @@ import os
 from datetime import date
 
 from app import condiciones as reglas_condiciones
+from app.campos_servicio import CAMPOS_CONTRATO, valor_guardado
 from app.marcas_documento import normalizar_marca
 
 MESES = (
@@ -97,7 +98,8 @@ def valores_para_documento(tramite, empresa_simulada: dict | None = None) -> dic
         empresa = tramite.empresa
         razon_social = empresa.razon_social if empresa else None
         rut_empresa = empresa.rut_empresa if empresa else None
-        datos = (empresa.datos or {}) if empresa else {}
+        # Los mismos datos que escribió el cliente, con las claves del formulario.
+        datos = {c.clave: valor_guardado(empresa, c) for c in CAMPOS_CONTRATO}
     cond = tramite.condiciones or {}
 
     valores: dict[str, str | None] = {

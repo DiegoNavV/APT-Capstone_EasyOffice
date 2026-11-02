@@ -19,6 +19,7 @@ from PIL import Image, ImageDraw
 from app import convertir_pdf, marca_agua, models, vista_previa
 from app.convertir_pdf import ErrorConversion, ServidorOcupado
 from app.seguridad import limiter
+from tests.conftest import crear_empresa
 from tests.test_cliente_envio import CAMPOS_CONTRATO, CONTRATO, empresa_completa, tramite_de  # noqa: F401
 from tests.test_plantillas import carpeta_plantillas, docx_con, headers_admin, subir  # noqa: F401
 from tests.test_rellenar_docx import textos_de
@@ -74,6 +75,12 @@ def rasterizados(monkeypatch):
 @pytest.fixture()
 def tramite(tramite_de, subir, db_session):  # noqa: F811
     t = tramite_de()
+    # folio exige sucursal (ck_tramite_folio_con_sucursal): se crea una para poder
+    # fijar el folio a mano sin pasar por la conversión completa con condiciones.
+    t.sucursal = models.Sucursal(
+        iniciales="LF", nombre="La Florida", direccion="Vicuña Mackenna Poniente #7255",
+        comuna="La Florida", region="Metropolitana", rol_propiedad="271-147",
+    )
     t.folio = "LF-01-2026"
     db_session.commit()
     r = subir(docx_con(PLANTILLA), id_servicio=t.id_servicio)
@@ -168,7 +175,7 @@ def test_no_guarda_nada(client, tramite, db_session):
     assert pedir(client, tramite, CAMPOS_CONTRATO).status_code == 200
     db_session.expire_all()
     t = db_session.get(models.Tramite, tramite.id_tramite)
-    assert t.estado_actual == "generado" and t.datos_empresa is None and t.id_empresa is None
+    assert t.estado_actual == "esperando_datos" and t.datos_empresa is None and t.id_empresa is None
     assert t.ruta_documento_generado is None
     assert db_session.query(models.Empresa).count() == 0
     assert db_session.query(models.HistorialEstado).count() == antes
@@ -188,12 +195,12 @@ def test_lo_ya_registrado_sale_enmascarado(client, tramite, empresa_completa, db
 
 
 def test_mezcla_de_registrado_y_escrito(client, tramite, db_session, entorno):
-    empresa = models.Empresa(rut_empresa="76123456-0", razon_social="Comercial Prueba SpA", datos={})
-    db_session.add(empresa)
-    db_session.commit()
+    # Toda empresa registrada tiene al menos razón social, RUT y representante.
+    empresa = crear_empresa(db_session, rut_empresa="76123456-0", razon_social="Comercial Prueba SpA")
     tramite.id_empresa = empresa.id_empresa
     db_session.commit()
-    escritos = {k: v for k, v in CAMPOS_CONTRATO.items() if k not in ("razon_social", "rut_empresa")}
+    registrados = ("razon_social", "rut_empresa", "representante_legal", "rut_representante")
+    escritos = {k: v for k, v in CAMPOS_CONTRATO.items() if k not in registrados}
     r = pedir(client, tramite, escritos)
     assert r.status_code == 200, r.text
     t = texto(entorno[0])
@@ -244,7 +251,7 @@ def test_tramite_que_ya_envio_sus_datos(client, tramite, db_session):
 
 def test_tramite_con_datos_de_empresa_ya_enviados(client, tramite, db_session):
     db_session.add(models.DatosEmpresaTramite(
-        id_tramite=tramite.id_tramite, solicitante_es_representante=True, consentimiento_aceptado=True,
+        id_tramite=tramite.id_tramite, solicitante_es_representante=True, version_consentimiento="2026-10",
     ))
     db_session.commit()
     db_session.refresh(tramite)

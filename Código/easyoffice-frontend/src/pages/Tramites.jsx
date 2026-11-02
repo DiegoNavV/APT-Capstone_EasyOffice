@@ -15,7 +15,7 @@ const PAUSA_BUSQUEDA_MS = 300
 
 // Orden del ciclo de vida de un trámite; coincide con `estado_actual` del backend.
 const ESTADOS = [
-  { valor: 'generado', texto: 'Generado' },
+  { valor: 'esperando_datos', texto: 'Esperando datos' },
   { valor: 'procesando_firma', texto: 'Procesando firma' },
   { valor: 'en_revision', texto: 'En revisión' },
   { valor: 'firmado', texto: 'Firmado' },

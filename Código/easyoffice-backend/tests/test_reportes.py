@@ -82,8 +82,8 @@ class TestConDatos:
         t1 = hacer_tramite()
         t2 = hacer_tramite()
         t3 = hacer_tramite()
-        _set_estado(db_session, t1["id_tramite"], "generado")
-        _set_estado(db_session, t2["id_tramite"], "generado")
+        _set_estado(db_session, t1["id_tramite"], "esperando_datos")
+        _set_estado(db_session, t2["id_tramite"], "esperando_datos")
         _set_estado(db_session, t3["id_tramite"], "firmado")
 
         resp = client.get(URL, headers=headers_admin)
@@ -93,7 +93,7 @@ class TestConDatos:
         assert datos["total"] == 3
 
         por_estado = {fila["etiqueta"]: fila["cantidad"] for fila in datos["por_estado"]}
-        assert por_estado == {"generado": 2, "firmado": 1}
+        assert por_estado == {"esperando_datos": 2, "firmado": 1}
 
         por_servicio = {fila["etiqueta"]: fila["cantidad"] for fila in datos["por_servicio"]}
         assert por_servicio == {seed["servicio"].nombre: 3}

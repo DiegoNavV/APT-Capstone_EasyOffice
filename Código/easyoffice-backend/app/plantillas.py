@@ -66,20 +66,13 @@ def ruta_absoluta(plantilla: models.PlantillaDocumento) -> Path:
     return ruta
 
 
-def _numero_de_version(texto: str) -> int:
-    try:
-        return int(float(texto))
-    except ValueError:
-        return 0
-
-
 def listar(db: Session, id_servicio: int | None = None) -> list[models.PlantillaDocumento]:
     q = db.query(models.PlantillaDocumento)
     if id_servicio is not None:
         q = q.filter(models.PlantillaDocumento.id_servicio == id_servicio)
     filas = q.all()
     # Por servicio, la versión más nueva primero.
-    filas.sort(key=lambda p: (p.id_servicio, -_numero_de_version(p.version)))
+    filas.sort(key=lambda p: (p.id_servicio, -p.version))
     return filas
 
 
@@ -109,7 +102,7 @@ def crear_version(
             raise ConflictoDePlantilla(
                 f"Este archivo es idéntico a la versión {p.version} que ya está guardada."
             )
-    version = str(max([_numero_de_version(p.version) for p in existentes] + [0]) + 1)
+    version = max([p.version for p in existentes] + [0]) + 1
 
     relativa = f"servicio_{servicio.id_servicio}/v{version}_{uuid.uuid4().hex[:8]}.docx"
     destino = directorio_plantillas() / relativa

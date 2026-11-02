@@ -1,7 +1,10 @@
 """
 Tabla empresa: los datos de cada empresa cliente se guardan una sola vez y se reutilizan entre trámites. Se prueba el modelo 
 y sus garantías en la base de datos; la lógica que vincula y completa datos llega en fases posteriores.
+Toda empresa tiene un representante legal (tabla representante_legal), que puede representar a varias empresas.
 """
+import itertools
+
 import pytest
 from sqlalchemy.exc import IntegrityError
 
@@ -19,11 +22,21 @@ def crear_tramite(crear_solicitud, convertir, db_session):
     return _crear
 
 
+_runs = itertools.count(1)
+
+
+def _representante():
+    # Un RUN distinto por llamada: así un choque de UNIQUE solo puede venir de la empresa.
+    return models.RepresentanteLegal(rut=f"{10000000 + next(_runs)}-1", nombre="Ana Soto Pérez")
+
+
 def _empresa(**overrides):
     base = dict(
         rut_empresa="76123456-0",
         razon_social="Comercial Prueba SpA",
-        datos={"giro_principal": "Venta de artículos de oficina", "email": "contacto@prueba.cl"},
+        giro_principal="Venta de artículos de oficina",
+        email="contacto@prueba.cl",
+        representante=_representante(),
     )
     base.update(overrides)
     return models.Empresa(**base)
@@ -37,12 +50,14 @@ class TestEmpresa:
 
         fila = db_session.query(models.Empresa).one()
         assert fila.razon_social == "Comercial Prueba SpA"
-        assert fila.datos["giro_principal"] == "Venta de artículos de oficina"
+        assert fila.giro_principal == "Venta de artículos de oficina"
+        assert fila.representante_legal == "Ana Soto Pérez"
         assert fila.fecha_creacion is not None
         assert fila.fecha_actualizacion is not None
 
     def test_datos_por_defecto_es_dict_vacio(self, db_session):
-        db_session.add(models.Empresa(rut_empresa="76123456-0", razon_social="Comercial Prueba SpA"))
+        db_session.add(models.Empresa(
+            rut_empresa="76123456-0", razon_social="Comercial Prueba SpA", representante=_representante()))
         db_session.commit()
         db_session.expire_all()
         assert db_session.query(models.Empresa).one().datos == {}
@@ -54,11 +69,20 @@ class TestEmpresa:
         with pytest.raises(IntegrityError):
             db_session.commit()
 
-    @pytest.mark.parametrize("campo", ["rut_empresa", "razon_social"])
+    @pytest.mark.parametrize("campo", ["rut_empresa", "razon_social", "representante"])
     def test_campos_obligatorios(self, db_session, campo):
         db_session.add(_empresa(**{campo: None}))
         with pytest.raises(IntegrityError):
             db_session.commit()
+
+    def test_un_representante_puede_tener_varias_empresas(self, db_session):
+        representante = _representante()
+        db_session.add_all([
+            _empresa(representante=representante),
+            _empresa(rut_empresa="77111222-6", razon_social="Otra SpA", representante=representante),
+        ])
+        db_session.commit()
+        assert db_session.query(models.RepresentanteLegal).count() == 1
 
 
 class TestVinculoConTramite:

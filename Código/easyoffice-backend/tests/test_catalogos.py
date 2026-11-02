@@ -72,10 +72,10 @@ class TestSucursales:
             "rol_propiedad": "271-147",
         }
 
-    def test_la_sucursal_sin_rol_de_propiedad_sale_con_null(self, client, headers_agente, crear_sucursal):
-        crear_sucursal(rol_propiedad=None)
-
-        assert client.get(self.URL, headers=headers_agente).json()[0]["rol_propiedad"] is None
+    def test_el_rol_de_propiedad_es_obligatorio(self, crear_sucursal):
+        # Sin rol de avalúo la autorización de domicilio tributario queda incompleta.
+        with pytest.raises(IntegrityError):
+            crear_sucursal(rol_propiedad=None)
 
     def test_sin_sucursales_devuelve_lista_vacia(self, client, headers_agente):
         assert client.get(self.URL, headers=headers_agente).json() == []
@@ -163,11 +163,15 @@ class TestColumnasNuevasDelTramite:
         assert tramite.folio == "LF-01-2026"
         assert tramite.condiciones == condiciones
 
-    def test_el_folio_no_se_repite(self, tramite, crear_solicitud, convertir, db_session):
+    def test_el_folio_no_se_repite(self, tramite, crear_solicitud, convertir, crear_sucursal, db_session):
+        sucursal = crear_sucursal()
         otro = db_session.get(models.Tramite, convertir(crear_solicitud()["id_solicitud"]).json()["id_tramite"])
+        # folio exige sucursal (ck_tramite_folio_con_sucursal).
+        tramite.id_sucursal = sucursal.id_sucursal
         tramite.folio = "LF-01-2026"
         db_session.commit()
 
+        otro.id_sucursal = sucursal.id_sucursal
         otro.folio = "LF-01-2026"
         with pytest.raises(IntegrityError):
             db_session.commit()

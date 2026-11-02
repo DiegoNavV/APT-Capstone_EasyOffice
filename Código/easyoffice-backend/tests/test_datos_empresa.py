@@ -1,6 +1,6 @@
 """
 Tabla datos_empresa_tramite: registro del envío ÚNICO de datos que hace el cliente con su código. Aquí se prueban las garantías 
-a nivel de base de datos (envío único, consentimiento obligatorio). El endpoint público que escribe en esta tabla llega en una fase posterior.
+a nivel de base de datos (envío único, versión del consentimiento obligatoria). El endpoint público que escribe en esta tabla llega en una fase posterior.
 """
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -20,7 +20,7 @@ def _envio(id_tramite, **overrides):
     base = dict(
         id_tramite=id_tramite,
         solicitante_es_representante=False,
-        consentimiento_aceptado=True,
+        version_consentimiento="2026-10",
     )
     base.update(overrides)
     return models.DatosEmpresaTramite(**base)
@@ -34,7 +34,7 @@ class TestDatosEmpresaTramite:
 
         fila = db_session.get(models.Tramite, tramite.id_tramite).datos_empresa
         assert fila.solicitante_es_representante is False
-        assert fila.consentimiento_aceptado is True
+        assert fila.version_consentimiento == "2026-10"
         assert fila.fecha_envio is not None
 
     def test_tramite_sin_envio_devuelve_none(self, tramite):
@@ -47,8 +47,8 @@ class TestDatosEmpresaTramite:
         with pytest.raises(IntegrityError):
             db_session.commit()
 
-    def test_sin_consentimiento_no_se_guarda(self, db_session, tramite):
-        db_session.add(_envio(tramite.id_tramite, consentimiento_aceptado=False))
+    def test_sin_version_de_consentimiento_no_se_guarda(self, db_session, tramite):
+        db_session.add(_envio(tramite.id_tramite, version_consentimiento=None))
         with pytest.raises(IntegrityError):
             db_session.commit()
 

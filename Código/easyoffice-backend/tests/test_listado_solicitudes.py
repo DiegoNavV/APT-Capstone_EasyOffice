@@ -26,7 +26,8 @@ def _convertir_directo(db_session, id_solicitud):
     """Convierte vía crud (no vía endpoint) para que estas pruebas no dependan
     de si /convertir exige o no sesión."""
     solicitud = crud.obtener_solicitud(db_session, id_solicitud)
-    return crud.convertir_solicitud_a_tramite(db_session, solicitud, None)
+    responsable = db_session.query(models.Usuario).first()
+    return crud.convertir_solicitud_a_tramite(db_session, solicitud, responsable.id_usuario)
 
 
 # ===========================================================================
@@ -84,7 +85,7 @@ class TestAutenticacion:
 
     def test_crear_solicitud_sigue_siendo_publico(self, client, seed):
         """Proteger el GET no debe afectar al formulario público (POST)."""
-        resp = client.post(URL, json={"nombre": "Ana"})
+        resp = client.post(URL, json={"nombre": "Ana", "rut": "11111111-1", "email": "ana@b.cl"})
         assert resp.status_code == 201
 
 
@@ -128,7 +129,7 @@ class TestListado:
         assert item["nombre_servicio"] is None
 
     def test_mas_recientes_primero(self, client, auth_headers, crear_solicitud):
-        ids = [crear_solicitud(rut=f"{i}-{i}")["id_solicitud"] for i in range(1, 5)]
+        ids = [crear_solicitud(rut=f"{10000000 + i}-{i % 10}")["id_solicitud"] for i in range(1, 5)]
         resultado = [s["id_solicitud"] for s in client.get(URL, headers=auth_headers).json()]
         assert resultado == sorted(ids, reverse=True)
 
@@ -138,16 +139,16 @@ class TestListado:
         tramite = _convertir_directo(db_session, sol["id_solicitud"])
 
         item = client.get(URL, headers=auth_headers).json()[0]
-        assert item["estado"] == "convertido"
+        assert item["estado"] == "convertida"
         assert item["id_tramite_generado"] == tramite.id_tramite
         assert item["codigo_seguimiento"] == tramite.codigo_seguimiento
         assert len(item["codigo_seguimiento"]) == 8
 
     def test_cada_solicitud_muestra_su_propio_codigo(
             self, client, auth_headers, crear_solicitud, db_session):
-        s1 = crear_solicitud(rut="1-1")
-        s2 = crear_solicitud(rut="2-2")
-        s3 = crear_solicitud(rut="3-3")  # queda pendiente
+        s1 = crear_solicitud(rut="11111111-1")
+        s2 = crear_solicitud(rut="22222222-2")
+        s3 = crear_solicitud(rut="33333333-3")  # queda pendiente
         t1 = _convertir_directo(db_session, s1["id_solicitud"])
         t2 = _convertir_directo(db_session, s2["id_solicitud"])
 
@@ -166,8 +167,8 @@ class TestFiltroEstado:
 
     @pytest.fixture()
     def una_pendiente_y_una_convertida(self, crear_solicitud, db_session):
-        pendiente = crear_solicitud(rut="1-1")
-        convertida = crear_solicitud(rut="2-2")
+        pendiente = crear_solicitud(rut="11111111-1")
+        convertida = crear_solicitud(rut="22222222-2")
         _convertir_directo(db_session, convertida["id_solicitud"])
         return pendiente, convertida
 
@@ -178,7 +179,7 @@ class TestFiltroEstado:
 
     def test_filtra_convertidas(self, client, auth_headers, una_pendiente_y_una_convertida):
         _, convertida = una_pendiente_y_una_convertida
-        data = client.get(URL, params={"estado": "convertido"}, headers=auth_headers).json()
+        data = client.get(URL, params={"estado": "convertida"}, headers=auth_headers).json()
         assert [s["id_solicitud"] for s in data] == [convertida["id_solicitud"]]
 
     def test_sin_filtro_devuelve_todas(self, client, auth_headers, una_pendiente_y_una_convertida):
@@ -203,7 +204,7 @@ class TestPaginacion:
 
     @pytest.fixture()
     def cinco(self, crear_solicitud):
-        return [crear_solicitud(rut=f"{i}-{i}")["id_solicitud"] for i in range(1, 6)]
+        return [crear_solicitud(rut=f"{10000000 + i}-{i % 10}")["id_solicitud"] for i in range(1, 6)]
 
     def test_limit_limita_resultados(self, client, auth_headers, cinco):
         data = client.get(URL, params={"limit": 2}, headers=auth_headers).json()

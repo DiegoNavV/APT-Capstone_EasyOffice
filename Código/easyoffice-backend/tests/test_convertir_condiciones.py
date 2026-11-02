@@ -4,6 +4,7 @@ from datetime import date
 import pytest
 
 from app import condiciones, models
+from tests.conftest import crear_empresa, crear_tramite
 
 
 @pytest.fixture()
@@ -60,17 +61,6 @@ def enviar(client, headers_agente, crear_solicitud):
 def tramite_guardado(db_session, id_tramite):
     db_session.expire_all()
     return db_session.get(models.Tramite, id_tramite)
-
-
-def _cliente(db_session):
-    c = models.Cliente(nombre="X", rut="1-9")
-    db_session.add(c)
-    db_session.commit()
-    return c.id_cliente
-
-
-def _id_servicio(db_session):
-    return db_session.query(models.ServicioContratado).first().id_servicio
 
 
 class TestVencimiento:
@@ -168,9 +158,7 @@ class TestConvertirConCondiciones:
         assert t.folio == f"LF-01-{date.today().year}" and t.condiciones is None
 
     def test_se_puede_combinar_con_empresa(self, enviar, db_session, sucursal, servicios):
-        e = models.Empresa(rut_empresa="76123456-7", razon_social="Empresa Uno SpA")
-        db_session.add(e)
-        db_session.commit()
+        e = crear_empresa(db_session, rut_empresa="76123456-7", razon_social="Empresa Uno SpA")
 
         resp = enviar(cuerpo(sucursal, servicios, id_empresa=e.id_empresa))
 
@@ -187,7 +175,8 @@ class TestConvertirConCondiciones:
 
 class TestFolio:
     def test_correlativo_por_sucursal_y_anio(self, enviar, sucursal, servicios, db_session):
-        otra = models.Sucursal(iniciales="VL", nombre="Valparaíso", direccion="Blanco 1215", comuna="Valparaíso", region="Valparaíso")
+        otra = models.Sucursal(iniciales="VL", nombre="Valparaíso", direccion="Blanco 1215", comuna="Valparaíso", region="Valparaíso",
+                               rol_propiedad="15-12")
         db_session.add(otra)
         db_session.commit()
         anio = date.today().year
@@ -197,22 +186,20 @@ class TestFolio:
 
         assert folios == [f"LF-01-{anio}", f"LF-02-{anio}", f"VL-01-{anio}"]
 
-    def test_un_folio_de_otro_anio_no_cuenta(self, enviar, sucursal, servicios, db_session):
-        db_session.add(models.Tramite(
-            id_cliente=_cliente(db_session), id_servicio=_id_servicio(db_session), codigo_seguimiento="ABCD2345",
+    def test_un_folio_de_otro_anio_no_cuenta(self, enviar, sucursal, servicios, db_session, seed):
+        crear_tramite(
+            db_session, seed["servicio"], seed["usuario"], codigo_seguimiento="ABCD2345",
             id_sucursal=sucursal.id_sucursal, folio="LF-50-2020",
-        ))
-        db_session.commit()
+        )
 
         assert enviar({"id_sucursal": sucursal.id_sucursal}).json()["folio"] == f"LF-01-{date.today().year}"
 
-    def test_pasa_de_99_sin_perder_el_orden(self, enviar, sucursal, db_session):
+    def test_pasa_de_99_sin_perder_el_orden(self, enviar, sucursal, db_session, seed):
         anio = date.today().year
-        db_session.add(models.Tramite(
-            id_cliente=_cliente(db_session), id_servicio=_id_servicio(db_session), codigo_seguimiento="ABCD2345",
+        crear_tramite(
+            db_session, seed["servicio"], seed["usuario"], codigo_seguimiento="ABCD2345",
             id_sucursal=sucursal.id_sucursal, folio=f"LF-99-{anio}",
-        ))
-        db_session.commit()
+        )
 
         assert enviar({"id_sucursal": sucursal.id_sucursal}).json()["folio"] == f"LF-100-{anio}"
 

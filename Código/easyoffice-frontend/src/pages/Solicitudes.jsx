@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { ApiError } from '../lib/api.js'
-import { convertirSolicitud, listarSolicitudes } from '../lib/solicitudesApi.js'
+import { convertirSolicitud, descartarSolicitud, listarSolicitudes } from '../lib/solicitudesApi.js'
 import { useNovedadesSolicitudes } from '../lib/useNovedadesSolicitudes.js'
 import PaginaPanel from '../components/PaginaPanel.jsx'
 import CondicionesContrato from '../components/CondicionesContrato.jsx'
@@ -15,7 +15,8 @@ const POR_PAGINA = 10
 const FILTROS = [
   { valor: '', texto: 'Todas' },
   { valor: 'pendiente', texto: 'Pendientes' },
-  { valor: 'convertido', texto: 'Convertidas' }
+  { valor: 'convertida', texto: 'Convertidas' },
+  { valor: 'descartada', texto: 'Descartadas' }
 ]
 
 function formatearFecha(iso) {
@@ -45,7 +46,7 @@ function soloPideSucursal(nombreServicio) {
 
 const CONTRATO_PENDIENTE = { error: 'Cargando las opciones del contrato…', idSucursal: null, condiciones: null }
 
-function TarjetaSolicitud({ solicitud, accessToken, onConvertir, onSesionVencida }) {
+function TarjetaSolicitud({ solicitud, accessToken, onConvertir, onDescartar, onSesionVencida }) {
   const [confirmando, setConfirmando] = useState(false)
   // Empresa existente a la que el agente decide vincular el trámite (null = sin empresa).
   const [empresa, setEmpresa] = useState(null)
@@ -55,7 +56,14 @@ function TarjetaSolicitud({ solicitud, accessToken, onConvertir, onSesionVencida
   const [errorConversion, setErrorConversion] = useState('')
   const [copiado, setCopiado] = useState(false)
 
-  const convertida = solicitud.estado === 'convertido'
+  // Descarte: se pide el motivo aparte (la base lo exige), nunca a la vez que la conversión.
+  const [descartando, setDescartando] = useState(false)
+  const [motivoDescarte, setMotivoDescarte] = useState('')
+  const [procesandoDescarte, setProcesandoDescarte] = useState(false)
+  const [errorDescarte, setErrorDescarte] = useState('')
+
+  const convertida = solicitud.estado === 'convertida'
+  const descartada = solicitud.estado === 'descartada'
   const sinServicio = !solicitud.id_servicio
 
   async function confirmar() {
@@ -72,6 +80,26 @@ function TarjetaSolicitud({ solicitud, accessToken, onConvertir, onSesionVencida
       setErrorConversion(e instanceof ApiError ? e.message : 'No se pudo conectar con el servidor.')
     } finally {
       setConvirtiendo(false)
+    }
+  }
+
+  function cancelarDescarte() {
+    setDescartando(false)
+    setMotivoDescarte('')
+    setErrorDescarte('')
+  }
+
+  async function confirmarDescarte() {
+    setProcesandoDescarte(true)
+    setErrorDescarte('')
+    try {
+      await onDescartar(solicitud, motivoDescarte)
+      setDescartando(false)
+      setMotivoDescarte('')
+    } catch (e) {
+      setErrorDescarte(e instanceof ApiError ? e.message : 'No se pudo conectar con el servidor.')
+    } finally {
+      setProcesandoDescarte(false)
     }
   }
 
@@ -94,10 +122,14 @@ function TarjetaSolicitud({ solicitud, accessToken, onConvertir, onSesionVencida
         </div>
         <span
           className={`text-xs font-medium px-2.5 py-1 rounded-full ${
-            convertida ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+            convertida
+              ? 'bg-emerald-50 text-emerald-700'
+              : descartada
+                ? 'bg-gray-100 text-gray-600'
+                : 'bg-amber-50 text-amber-700'
           }`}
         >
-          {convertida ? 'Convertida' : 'Pendiente'}
+          {convertida ? 'Convertida' : descartada ? 'Descartada' : 'Pendiente'}
         </span>
       </div>
 
@@ -136,6 +168,15 @@ function TarjetaSolicitud({ solicitud, accessToken, onConvertir, onSesionVencida
                 <p className="text-xs text-ink-muted">Folio</p>
                 <p className="font-mono text-lg font-semibold text-ink-primary">{solicitud.folio}</p>
               </div>
+            )}
+          </div>
+        ) : descartada ? (
+          <div>
+            <p className="text-sm text-ink-secondary">Solicitud descartada.</p>
+            {solicitud.motivo_descarte && (
+              <p className="mt-1 text-sm text-ink-primary">
+                <span className="font-medium">Motivo:</span> {solicitud.motivo_descarte}
+              </p>
             )}
           </div>
         ) : confirmando ? (
@@ -196,16 +237,61 @@ function TarjetaSolicitud({ solicitud, accessToken, onConvertir, onSesionVencida
               <p className="mt-2 text-xs text-ink-muted">{contrato.error}</p>
             )}
           </div>
+        ) : descartando ? (
+          <div>
+            <p className="text-sm text-ink-primary">
+              ¿Por qué se descarta la solicitud de <span className="font-semibold">{solicitud.nombre}</span>?
+            </p>
+            <textarea
+              value={motivoDescarte}
+              onChange={(e) => setMotivoDescarte(e.target.value)}
+              maxLength={500}
+              rows={2}
+              placeholder="Ej: no respondió, solicitud duplicada, cliente desistió…"
+              disabled={procesandoDescarte}
+              className="mt-2 w-full rounded-[10px] border border-line px-3 py-2 text-sm text-ink-primary disabled:opacity-60"
+            />
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={confirmarDescarte}
+                disabled={procesandoDescarte || !motivoDescarte.trim()}
+                className="bg-red-600 hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold px-5 py-2.5 rounded-[10px] transition-colors"
+              >
+                {procesandoDescarte ? 'Descartando…' : 'Descartar solicitud'}
+              </button>
+              <button
+                type="button"
+                onClick={cancelarDescarte}
+                disabled={procesandoDescarte}
+                className="text-sm font-medium text-ink-secondary hover:underline disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+            </div>
+            {errorDescarte && (
+              <p role="alert" className="mt-2 text-sm text-red-600">{errorDescarte}</p>
+            )}
+          </div>
         ) : (
           <div>
-            <button
-              type="button"
-              onClick={() => setConfirmando(true)}
-              disabled={sinServicio}
-              className="bg-brand-primary hover:bg-brand-dark disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold px-5 py-2.5 rounded-[10px] transition-colors"
-            >
-              Convertir y generar código
-            </button>
+            <div className="flex flex-wrap items-center gap-4">
+              <button
+                type="button"
+                onClick={() => setConfirmando(true)}
+                disabled={sinServicio}
+                className="bg-brand-primary hover:bg-brand-dark disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold px-5 py-2.5 rounded-[10px] transition-colors"
+              >
+                Convertir y generar código
+              </button>
+              <button
+                type="button"
+                onClick={() => setDescartando(true)}
+                className="text-sm font-medium text-red-600 hover:underline"
+              >
+                Descartar
+              </button>
+            </div>
             {sinServicio && (
               <p className="mt-2 text-xs text-ink-muted">
                 Esta solicitud no indica un servicio, por eso no se puede convertir todavía.
@@ -300,11 +386,34 @@ export default function Solicitudes() {
           s.id_solicitud === solicitud.id_solicitud
             ? {
                 ...s,
-                estado: 'convertido',
+                estado: 'convertida',
                 id_tramite_generado: tramite.id_tramite,
                 codigo_seguimiento: tramite.codigo_seguimiento,
                 folio: tramite.folio
               }
+            : s
+        )
+      )
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        cerrarSesion()
+        return
+      }
+      throw e // la tarjeta muestra el mensaje junto al botón
+    }
+  }
+
+  async function descartar(solicitud, motivo) {
+    try {
+      const actualizada = await descartarSolicitud({
+        accessToken,
+        idSolicitud: solicitud.id_solicitud,
+        motivo
+      })
+      setItems((prev) =>
+        prev.map((s) =>
+          s.id_solicitud === solicitud.id_solicitud
+            ? { ...s, estado: 'descartada', motivo_descarte: actualizada.motivo_descarte }
             : s
         )
       )
@@ -342,9 +451,11 @@ export default function Solicitudes() {
   const mensajeVacio =
     filtro === 'pendiente'
       ? 'No hay solicitudes pendientes.'
-      : filtro === 'convertido'
+      : filtro === 'convertida'
         ? 'Todavía no hay solicitudes convertidas.'
-        : 'Todavía no han llegado solicitudes desde el sitio.'
+        : filtro === 'descartada'
+          ? 'Todavía no hay solicitudes descartadas.'
+          : 'Todavía no han llegado solicitudes desde el sitio.'
 
   // El aviso va en el encabezado (que no se desplaza) para que, al aparecer, la lista que el agente está leyendo no se mueva. 
   // La lista solo cambia si él hace clic.
@@ -416,6 +527,7 @@ export default function Solicitudes() {
                 solicitud={s}
                 accessToken={accessToken}
                 onConvertir={convertir}
+                onDescartar={descartar}
                 onSesionVencida={cerrarSesion}
               />
             ))}

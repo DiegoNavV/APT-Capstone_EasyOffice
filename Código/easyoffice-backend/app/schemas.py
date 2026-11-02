@@ -1,4 +1,5 @@
 """Esquemas Pydantic: login del panel y módulo solicitud_contacto / tramite (seguimiento)."""
+import re
 from datetime import date, datetime
 from typing import Any, Optional
 
@@ -42,13 +43,18 @@ class UsuarioOut(BaseModel):
 
 # ---------- Solicitud de contacto (formulario público "Contrata aquí") ----------
 
+# Formato canónico del RUT/RUN tal como lo guarda la base (ver los CHECK ck_*_run_formato).
+_RUT_CANONICO = re.compile(r"^[0-9]{7,8}-[0-9K]$")
+
+
 class SolicitudContactoCreate(BaseModel):
     nombre: str = Field(max_length=150)
-    rut: Optional[str] = Field(default=None, max_length=15)
+    # Obligatorio: el RUN identifica al cliente al convertir la solicitud (cliente.run es obligatorio en la base).
+    rut: str = Field(max_length=15)
     email: Optional[EmailStr] = None
-    telefono: Optional[str] = Field(default=None, max_length=20)
+    telefono: Optional[str] = Field(default=None, max_length=15)
     servicio_id: Optional[int] = None
-    mensaje: Optional[str] = None
+    mensaje: Optional[str] = Field(default=None, max_length=500)
 
     @field_validator("nombre")
     @classmethod
@@ -60,9 +66,26 @@ class SolicitudContactoCreate(BaseModel):
     @field_validator("rut")
     @classmethod
     def normalizar_rut_campo(cls, v):
-        # Convierte "" en None y uniforma formato ("12.345.678-9" -> "12345678-9")
-        # para no crear clientes duplicados por un RUT escrito distinto.
-        return normalizar_rut(v)
+        # Uniforma formato ("12.345.678-9" -> "12345678-9") para no crear clientes duplicados por un RUT
+        # escrito distinto. Solo se revisa la forma; el dígito verificador lo valida el formulario.
+        rut = normalizar_rut(v)
+        if not rut or not _RUT_CANONICO.match(rut):
+            raise ValueError("El RUT no es válido. Usa el formato 12345678-9.")
+        return rut
+
+    @field_validator("telefono")
+    @classmethod
+    def telefono_vacio_es_nulo(cls, v):
+        if v is None:
+            return None
+        return v.strip() or None
+
+    @model_validator(mode="after")
+    def algun_contacto(self):
+        # Sin correo ni teléfono el agente no tiene cómo contactar a la persona.
+        if not self.email and not self.telefono:
+            raise ValueError("Indica al menos un correo o un teléfono de contacto.")
+        return self
 
 
 class SolicitudContactoOut(BaseModel):
@@ -83,7 +106,7 @@ class SolicitudContactoOut(BaseModel):
 
 class SolicitudListadoOut(BaseModel):
     id_solicitud: int
-    nombre: str
+    nombre: Optional[str]  # None solo si la solicitud fue anonimizada
     rut: Optional[str]
     email: Optional[str]
     telefono: Optional[str]
@@ -95,6 +118,8 @@ class SolicitudListadoOut(BaseModel):
     # Solo viene cuando la solicitud ya fue convertida; el agente lo necesita para reenviarle el código al cliente si lo perdió.
     codigo_seguimiento: Optional[str]
     folio: Optional[str] = None
+    # Solo viene cuando la solicitud fue descartada.
+    motivo_descarte: Optional[str] = None
     fecha_creacion: datetime
 
 
@@ -104,6 +129,20 @@ class NovedadesSolicitudesOut(BaseModel):
     # Solo números, nunca datos de las solicitudes.
     nuevas: int
     ultimo_id: int
+
+# ---------- Descarte de una solicitud (acción del agente) ----------
+
+class DescartarSolicitudIn(BaseModel):
+    """Motivo obligatorio para descartar una solicitud sin convertirla (la base lo exige: ck_solicitud_motivo_descarte)."""
+    motivo: str = Field(max_length=500)
+
+    @field_validator("motivo")
+    @classmethod
+    def motivo_no_vacio(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Indica el motivo del descarte.")
+        return v.strip()
+
 
 # ---------- Conversión solicitud -> trámite (acción del agente) ----------
 
