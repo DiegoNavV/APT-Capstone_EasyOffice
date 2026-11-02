@@ -49,10 +49,10 @@ class TestCrearSolicitud:
         assert fila.id_tramite_generado is None
 
     def test_estado_no_puede_inyectarse_desde_el_payload(self, client, seed, db_session):
-        """Un cliente público no debería poder crear una solicitud ya 'convertido'."""
+        """Un cliente público no debería poder crear una solicitud ya 'convertida'."""
         resp = client.post("/api/solicitudes-contacto", json={
-            "nombre": "Ana", "servicio_id": seed["servicio"].id_servicio,
-            "estado": "convertido", "id_tramite_generado": 1,
+            "nombre": "Ana", "servicio_id": seed["servicio"].id_servicio, "rut": "11111111-1", "email": "a@b.cl",
+            "estado": "convertida", "id_tramite_generado": 1,
         })
         assert resp.status_code == 201
         assert resp.json()["estado"] == "pendiente"
@@ -71,7 +71,7 @@ class TestCrearSolicitud:
         assert resp.status_code == 422
 
     def test_nombre_se_guarda_sin_espacios_extremos(self, client):
-        resp = client.post("/api/solicitudes-contacto", json={"nombre": "  María  "})
+        resp = client.post("/api/solicitudes-contacto", json={"nombre": "  María  ", "rut": "11111111-1", "email": "a@b.cl"})
         assert resp.status_code == 201
         assert resp.json()["nombre"] == "María"
 
@@ -81,15 +81,38 @@ class TestCrearSolicitud:
         assert resp.status_code == 422
 
     def test_sin_servicio_permitido(self, client):
-        resp = client.post("/api/solicitudes-contacto", json={"nombre": "Pedro", "servicio_id": None})
+        resp = client.post("/api/solicitudes-contacto", json={"nombre": "Pedro", "servicio_id": None, "rut": "11111111-1", "email": "a@b.cl"})
         assert resp.status_code == 201
         assert resp.json()["id_servicio"] is None
 
-    def test_solo_nombre_minimo_permitido(self, client):
-        resp = client.post("/api/solicitudes-contacto", json={"nombre": "Pedro"})
+    def test_minimo_nombre_rut_y_un_contacto(self, client):
+        resp = client.post("/api/solicitudes-contacto", json={
+            "nombre": "Pedro", "rut": "11111111-1", "telefono": "912345678"})
         assert resp.status_code == 201
         data = resp.json()
-        assert data["rut"] is None and data["email"] is None and data["id_servicio"] is None
+        assert data["email"] is None and data["id_servicio"] is None
+
+    @pytest.mark.parametrize("rut", [None, "", "   "])
+    def test_sin_rut_422(self, client, rut):
+        """El RUN es obligatorio: identifica al cliente al convertir (cliente.run es obligatorio)."""
+        payload = {"nombre": "Pedro", "email": "a@b.cl"}
+        if rut is not None:
+            payload["rut"] = rut
+        assert client.post("/api/solicitudes-contacto", json=payload).status_code == 422
+
+    @pytest.mark.parametrize("rut", ["1-1", "123-4", "12345678-X", "abcdefgh-1"])
+    def test_rut_con_formato_invalido_422(self, client, rut):
+        resp = client.post("/api/solicitudes-contacto", json={"nombre": "X", "rut": rut, "email": "a@b.cl"})
+        assert resp.status_code == 422
+
+    def test_sin_email_ni_telefono_422(self, client):
+        resp = client.post("/api/solicitudes-contacto", json={"nombre": "Pedro", "rut": "11111111-1"})
+        assert resp.status_code == 422
+
+    def test_mensaje_mas_largo_que_500_422(self, client):
+        resp = client.post("/api/solicitudes-contacto", json={
+            "nombre": "Pedro", "rut": "11111111-1", "email": "a@b.cl", "mensaje": "x" * 501})
+        assert resp.status_code == 422
 
     def test_servicio_id_no_numerico_422(self, client):
         resp = client.post("/api/solicitudes-contacto", json={"nombre": "X", "servicio_id": "abc"})
@@ -104,7 +127,7 @@ class TestCrearSolicitud:
     def test_servicio_inexistente_da_404(self, client):
         """FIX: servicio_id inexistente ahora se valida antes de crear la
         solicitud y responde 404, en vez de un 500 por IntegrityError."""
-        resp = client.post("/api/solicitudes-contacto", json={"nombre": "X", "servicio_id": 99999})
+        resp = client.post("/api/solicitudes-contacto", json={"nombre": "X", "servicio_id": 99999, "rut": "11111111-1", "email": "a@b.cl"})
         assert resp.status_code == 404
         assert resp.json()["detail"] == "El servicio indicado no existe."
 
@@ -112,11 +135,11 @@ class TestCrearSolicitud:
         """OBSERVACIÓN (no es regla de negocio explícita): se aceptan solicitudes
         para un servicio con activo=False. Si no debe ofrecerse, falta validarlo."""
         resp = client.post("/api/solicitudes-contacto", json={
-            "nombre": "X", "servicio_id": seed["servicio_inactivo"].id_servicio})
+            "nombre": "X", "servicio_id": seed["servicio_inactivo"].id_servicio, "rut": "11111111-1", "email": "a@b.cl"})
         assert resp.status_code == 201
 
     def test_campos_con_largo_maximo_rechazan_422(self, client):
-        """FIX: el schema ahora limita largos (rut<=15, telefono<=20, nombre<=150)
+        """FIX: el schema ahora limita largos (rut<=15, telefono<=15, nombre<=150)
         para que Pydantic rechace con 422 antes de llegar a Postgres."""
         resp = client.post("/api/solicitudes-contacto", json={
             "nombre": "N" * 300, "rut": "1" * 40, "telefono": "9" * 50})
@@ -141,7 +164,7 @@ class TestConvertirSolicitud:
         data = resp.json()
         assert CODIGO_RE.match(data["codigo_seguimiento"]), data["codigo_seguimiento"]
         assert len(data["codigo_seguimiento"]) == 8
-        assert data["estado_actual"] == "generado"
+        assert data["estado_actual"] == "esperando_datos"
         assert data["nombre_servicio"] == "Constitución de Sociedad"
 
         # Efectos en BD
@@ -151,8 +174,9 @@ class TestConvertirSolicitud:
         assert tramite.id_usuario_responsable == seed["usuario"].id_usuario
 
         solicitud = db_session.get(models.SolicitudContacto, sol["id_solicitud"])
-        assert solicitud.estado == "convertido"
+        assert solicitud.estado == "convertida"
         assert solicitud.id_tramite_generado == tramite.id_tramite
+        assert solicitud.fecha_cierre is not None
 
         cliente = db_session.get(models.Cliente, tramite.id_cliente)
         assert cliente.rut == "12345678-9"
@@ -165,7 +189,8 @@ class TestConvertirSolicitud:
         historial = db_session.query(models.HistorialEstado).filter_by(
             id_tramite=data["id_tramite"]).all()
         assert len(historial) == 1
-        assert historial[0].estado == "generado"
+        assert historial[0].estado == "esperando_datos"
+        assert historial[0].origen == "agente"
         assert historial[0].id_usuario == seed["usuario"].id_usuario
 
     def test_el_responsable_es_siempre_quien_convierte(
@@ -234,26 +259,17 @@ class TestConvertirSolicitud:
         convertir(crear_solicitud(rut="22222222-2")["id_solicitud"])
         assert db_session.query(models.Cliente).count() == 2
 
-    def test_sin_rut_siempre_crea_cliente_nuevo(self, crear_solicitud, convertir, db_session):
-        """Sin RUT no hay forma de identificar al cliente: se crea uno nuevo cada
-        vez (y la UNIQUE sobre rut admite varios NULL, así que no explota)."""
-        r1 = convertir(crear_solicitud(rut=None)["id_solicitud"])
-        r2 = convertir(crear_solicitud(rut=None)["id_solicitud"])
-        assert r1.status_code == r2.status_code == 200
-        assert db_session.query(models.Cliente).count() == 2
-
-    def test_rut_string_vacio_se_guarda_como_none(self, client):
-        """FIX: rut="" ahora se normaliza a None en el schema (ya no crea un
-        cliente con rut="" que choca con UNIQUE en la segunda conversión)."""
-        resp = client.post("/api/solicitudes-contacto", json={"nombre": "X", "rut": ""})
-        assert resp.status_code == 201
-        assert resp.json()["rut"] is None
-
-    def test_dos_conversiones_con_rut_vacio_no_dan_500(self, crear_solicitud, convertir):
-        s1 = crear_solicitud(rut="")
-        s2 = crear_solicitud(rut="")
-        assert convertir(s1["id_solicitud"]).status_code == 200
-        assert convertir(s2["id_solicitud"]).status_code == 200
+    def test_solicitud_sin_rut_no_se_convierte(self, crear_solicitud, convertir, db_session):
+        """El formulario ya exige el RUN, pero una solicitud cargada por otra vía no lo tiene: sin RUN no
+        se puede identificar al cliente, así que la conversión se rechaza sin crear nada."""
+        sol = crear_solicitud()
+        db_session.get(models.SolicitudContacto, sol["id_solicitud"]).rut = None
+        db_session.commit()
+        resp = convertir(sol["id_solicitud"])
+        assert resp.status_code == 400
+        assert "RUN" in resp.json()["detail"]
+        assert db_session.query(models.Cliente).count() == 0
+        assert db_session.query(models.Tramite).count() == 0
 
     def test_mismo_rut_con_distinto_formato_reutiliza_cliente(
             self, crear_solicitud, convertir, db_session):
@@ -319,27 +335,36 @@ class TestConvertirSolicitud:
 
     def test_estado_distinto_de_pendiente_se_puede_convertir(
             self, crear_solicitud, convertir, db_session):
-        """OBSERVACIÓN: solo se bloquea estado == 'convertido'. Si en el futuro
-        existe 'descartada'/'cancelada', se podría convertir igual."""
+        """Solo se bloquea estado == 'convertida': una solicitud descartada todavía se puede convertir
+        (si el cliente vuelve y paga). Al convertirla pierde el motivo de descarte."""
         sol = crear_solicitud()
         fila = db_session.get(models.SolicitudContacto, sol["id_solicitud"])
         fila.estado = "descartada"
+        fila.motivo_descarte = "No respondió"
+        # estado != 'pendiente' exige fecha_cierre (ck_solicitud_cierre).
+        fila.fecha_cierre = crud.ahora_utc()
         db_session.commit()
         assert convertir(sol["id_solicitud"]).status_code == 200
+        db_session.expire_all()
+        fila = db_session.get(models.SolicitudContacto, sol["id_solicitud"])
+        assert fila.estado == "convertida" and fila.motivo_descarte is None
 
-    def test_con_tramite_generado_pero_estado_inconsistente_permite_segundo_tramite(
+    def test_estado_inconsistente_no_permite_segundo_tramite(
             self, crear_solicitud, convertir, db_session):
-        """OBSERVACIÓN/BUG latente: la protección contra doble conversión mira
-        solo `estado`, no `id_tramite_generado`. Pendiente para cuando exista
-        el módulo de autenticación/edición manual de estados."""
+        """FIX (antes era un bug latente): aunque `estado` vuelva a 'pendiente' por error, la base no
+        deja un segundo trámite para la misma solicitud (tramite.solicitud_contacto_id es único)."""
         sol = crear_solicitud()
         convertir(sol["id_solicitud"])
         fila = db_session.get(models.SolicitudContacto, sol["id_solicitud"])
-        fila.estado = "pendiente"  # id_tramite_generado sigue seteado
+        # Simula el estado corrupto completo (no solo "estado"): sin esto,
+        # fecha_cierre no-nula con estado='pendiente' viola ck_solicitud_cierre.
+        fila.estado = "pendiente"
+        fila.fecha_cierre = None
         db_session.commit()
         resp = convertir(sol["id_solicitud"])
-        assert resp.status_code == 200
-        assert db_session.query(models.Tramite).count() == 2
+        assert resp.status_code == 400
+        assert "ya fue convertida" in resp.json()["detail"]
+        assert db_session.query(models.Tramite).count() == 1
 
 
 # ===========================================================================
@@ -395,13 +420,13 @@ class TestGeneracionCodigo:
 
     def test_codigos_unicos_en_varias_conversiones(self, crear_solicitud, convertir):
         codigos = {
-            convertir(crear_solicitud(rut=f"{i}-{i}")["id_solicitud"]).json()["codigo_seguimiento"]
+            convertir(crear_solicitud(rut=f"{10000000 + i}-{i % 10}")["id_solicitud"]).json()["codigo_seguimiento"]
             for i in range(30)
         }
         assert len(codigos) == 30
 
     def test_reintenta_si_hay_colision(self, crear_solicitud, convertir, db_session, monkeypatch):
-        t1 = convertir(crear_solicitud(rut="1-1")["id_solicitud"]).json()
+        t1 = convertir(crear_solicitud(rut="11111111-1")["id_solicitud"]).json()
         existente = t1["codigo_seguimiento"]
 
         secuencia = iter([existente, "NUEVO234"])
@@ -410,7 +435,7 @@ class TestGeneracionCodigo:
         assert crud._generar_codigo_unico(db_session) == "NUEVO234"
 
     def test_agota_reintentos_lanza_runtime_error(self, crear_solicitud, convertir, db_session, monkeypatch):
-        existente = convertir(crear_solicitud(rut="1-1")["id_solicitud"]).json()["codigo_seguimiento"]
+        existente = convertir(crear_solicitud(rut="11111111-1")["id_solicitud"]).json()["codigo_seguimiento"]
         monkeypatch.setattr(crud, "_generar_codigo", lambda: existente)
         with pytest.raises(RuntimeError):
             crud._generar_codigo_unico(db_session)
@@ -420,24 +445,26 @@ class TestGeneracionCodigo:
         """El router captura RuntimeError y responde 500 con detalle (en vez de
         un 500 genérico sin mensaje). Además el cliente ya fue flusheado →
         verificamos que no quede huérfano (no hay commit)."""
-        existente = convertir(crear_solicitud(rut="1-1")["id_solicitud"]).json()["codigo_seguimiento"]
-        sol = crear_solicitud(rut="2-2")
+        existente = convertir(crear_solicitud(rut="11111111-1")["id_solicitud"]).json()["codigo_seguimiento"]
+        sol = crear_solicitud(rut="22222222-2")
         monkeypatch.setattr(crud, "_generar_codigo", lambda: existente)
         resp = client_500.post(
             f"/api/solicitudes-contacto/{sol['id_solicitud']}/convertir", headers=headers_agente)
         assert resp.status_code == 500
-        assert db_session.query(models.Cliente).filter_by(rut="2-2").count() == 0
+        assert db_session.query(models.Cliente).filter_by(rut="22222222-2").count() == 0
 
     def test_unique_en_bd_protege_aunque_falle_el_chequeo(self, db_session, seed):
         """La restricción UNIQUE es la red de seguridad real (p. ej. ante dos
         conversiones concurrentes que generen el mismo código)."""
         from sqlalchemy.exc import IntegrityError
-        cli = models.Cliente(nombre="X")
-        db_session.add(cli)
+        cli = models.Cliente(nombre="X", rut="11111111-1", email="x@x.cl")
+        solicitudes = [models.SolicitudContacto(nombre="X", rut="11111111-1", email="x@x.cl") for _ in range(2)]
+        db_session.add_all([cli, *solicitudes])
         db_session.flush()
-        for _ in range(2):
+        for sol in solicitudes:
             db_session.add(models.Tramite(
                 id_cliente=cli.id_cliente, id_servicio=seed["servicio"].id_servicio,
+                id_usuario_responsable=seed["usuario"].id_usuario, id_solicitud_origen=sol.id_solicitud,
                 codigo_seguimiento="AAAA1111"))
         with pytest.raises(IntegrityError):
             db_session.flush()

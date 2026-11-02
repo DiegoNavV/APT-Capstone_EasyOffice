@@ -65,7 +65,8 @@ def test_genera_guarda_y_permite_descargar(client, headers_agente, tramite, con_
     db_session.expire_all()
     guardado = db_session.get(models.Tramite, tramite.id_tramite)
     assert guardado.ruta_documento_generado == f"tramite_{tramite.id_tramite}.pdf"
-    assert guardado.estado_actual == "generado"          # generar no cambia el estado
+    assert guardado.estado_actual == "esperando_datos"   # generar no cambia el estado
+    assert guardado.id_plantilla == con_plantilla["id_plantilla"]  # queda la versión usada
 
     d = client.get(f"/api/tramites/{tramite.id_tramite}/documento", headers=headers_agente)
     assert d.status_code == 200 and d.content == PDF_FALSO
@@ -138,7 +139,9 @@ def test_cola_llena_responde_503(client, headers_agente, tramite, con_plantilla,
     r = generar(client, headers_agente, tramite.id_tramite)
     assert r.status_code == 503 and "Intenta de nuevo" in r.json()["detail"]
 
-def test_ruta_manipulada_no_se_descarga(client, headers_agente, tramite, db_session, entorno):
+def test_ruta_manipulada_no_se_descarga(client, headers_agente, tramite, con_plantilla, db_session, entorno):
+    # ruta_documento_generado exige plantilla_documento_id (ck_tramite_documento_con_plantilla).
+    tramite.id_plantilla = con_plantilla["id_plantilla"]
     tramite.ruta_documento_generado = "../../etc/passwd"
     db_session.commit()
     assert client.get(f"/api/tramites/{tramite.id_tramite}/documento", headers=headers_agente).status_code == 404

@@ -75,7 +75,7 @@ def verificar_password(password: str, password_hash: str | None) -> bool:
     except (VerificationError, InvalidHashError):
         # VerificationError: contraseña incorrecta.
         # InvalidHashError: el hash guardado no es Argon2 (ej. el usuario de
-        # prueba de db/init/02_seed.sql); se trata igual que una incorrecta.
+        # prueba de db/init/05_seed_dev.sql); se trata igual que una incorrecta.
         return False
 
 

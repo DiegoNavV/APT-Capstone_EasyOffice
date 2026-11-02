@@ -3,6 +3,7 @@ import Home from './pages/Home.jsx'
 import IniciarTramite from './pages/IniciarTramite.jsx'
 import SeguimientoTramite from './pages/SeguimientoTramite.jsx'
 import CompletarDatos from './pages/CompletarDatos.jsx'
+import NoEncontrada from './pages/NoEncontrada.jsx'
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
       <Route path="/iniciar-tramite" element={<IniciarTramite />} />
       <Route path="/seguimiento" element={<SeguimientoTramite />} />
       <Route path="/completar-datos" element={<CompletarDatos />} />
+      <Route path="*" element={<NoEncontrada />} />
     </Routes>
   )
 }

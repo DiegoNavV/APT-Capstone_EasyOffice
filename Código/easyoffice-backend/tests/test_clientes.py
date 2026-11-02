@@ -3,6 +3,7 @@
 import pytest
 
 from app import models
+from tests.conftest import crear_empresa as _crear_empresa
 
 URL = "/api/clientes"
 
@@ -74,12 +75,8 @@ class TestListado:
 
 @pytest.fixture()
 def crear_empresa(db_session):
-    def _crear(rut="76123456-0", razon_social="Comercial Prueba SpA", **datos):
-        empresa = models.Empresa(rut_empresa=rut, razon_social=razon_social, datos=datos)
-        db_session.add(empresa)
-        db_session.commit()
-        db_session.refresh(empresa)
-        return empresa
+    def _crear(rut="76123456-0", razon_social="Comercial Prueba SpA", **campos):
+        return _crear_empresa(db_session, rut_empresa=rut, razon_social=razon_social, **campos)
 
     return _crear
 
@@ -92,7 +89,7 @@ class TestFicha360:
         assert client.get(f"{URL}/9999", headers=headers_agente).status_code == 404
 
     def test_datos_empresas_y_tramites(self, client, headers_agente, crear_solicitud, convertir, crear_empresa, db_session):
-        empresa = crear_empresa(razon_social="Panadería Demo SpA", giro="Alimentos")
+        empresa = crear_empresa(razon_social="Panadería Demo SpA", giro_principal="Alimentos")
 
         sol1 = crear_solicitud(rut="77777777-7", nombre="Flor Cliente", email="flor@demo.cl", telefono="+56911111111")
         resp1 = client.post(
@@ -119,10 +116,15 @@ class TestFicha360:
         assert datos["telefono"] == "+56911111111"
 
         assert len(datos["tramites"]) == 2
-        assert all(t["estado_actual"] == "generado" for t in datos["tramites"])
+        assert all(t["estado_actual"] == "esperando_datos" for t in datos["tramites"])
         assert all(t["tiene_documento"] is False for t in datos["tramites"])
 
         assert len(datos["empresas"]) == 1
         assert datos["empresas"][0]["razon_social"] == "Panadería Demo SpA"
         assert datos["empresas"][0]["rut_empresa"] == empresa.rut_empresa
-        assert datos["empresas"][0]["datos"] == {"giro": "Alimentos"}
+        # La ficha muestra todos los datos registrados, con las claves del formulario.
+        assert datos["empresas"][0]["datos"] == {
+            "giro_principal": "Alimentos",
+            "representante_legal": "Ana Soto Pérez",
+            "rut_representante": "12345678-5",
+        }

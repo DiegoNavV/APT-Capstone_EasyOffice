@@ -2,7 +2,8 @@
 // Las claves coinciden con `estado_actual` del backend. Las variantes borrador / enviado / rechazado vienen del mockup y 
 // hoy ningún trámite las usa; quedan listas para cuando existan.
 const VARIANTES = {
-  generado: { bg: 'bg-status-draft-bg', fg: 'text-status-draft-fg', dot: 'bg-ink-secondary', texto: 'Generado' },
+  esperando_datos: { bg: 'bg-status-draft-bg', fg: 'text-status-draft-fg', dot: 'bg-ink-secondary', texto: 'Esperando datos' },
+  cancelado: { bg: 'bg-status-rejected-bg', fg: 'text-status-rejected-fg', dot: 'bg-status-rejected-fg', texto: 'Cancelado' },
   procesando_firma: { bg: 'bg-status-sent-bg', fg: 'text-status-sent-fg', dot: 'bg-status-sent-fg', texto: 'Procesando firma' },
   en_revision: { bg: 'bg-status-sent-bg', fg: 'text-status-sent-fg', dot: 'bg-status-sent-fg', texto: 'En revisión' },
   firmado: { bg: 'bg-status-signed-bg', fg: 'text-status-signed-fg', dot: 'bg-status-signed-fg', texto: 'Firmado' },
@@ -12,7 +13,7 @@ const VARIANTES = {
   rechazado: { bg: 'bg-status-rejected-bg', fg: 'text-status-rejected-fg', dot: 'bg-status-rejected-fg', texto: 'Rechazado' }
 }
 
-export default function StatusChip({ variant = 'generado', label }) {
+export default function StatusChip({ variant = 'esperando_datos', label }) {
   // Un estado que la vista no conoce se muestra en gris con su propio nombre.
   const v = VARIANTES[variant] ?? { ...VARIANTES.generado, texto: variant }
   return (

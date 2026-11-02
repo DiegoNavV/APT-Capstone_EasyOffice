@@ -5,16 +5,13 @@ solicitante y conversión con `id_empresa` opcional. El cliente final nunca inte
 import pytest
 
 from app import models
+from tests.conftest import crear_empresa as _crear_empresa
 
 
 @pytest.fixture()
 def crear_empresa(db_session):
     def _crear(rut="76123456-0", razon_social="Comercial Prueba SpA", **datos):
-        empresa = models.Empresa(rut_empresa=rut, razon_social=razon_social, datos=datos)
-        db_session.add(empresa)
-        db_session.commit()
-        db_session.refresh(empresa)
-        return empresa
+        return _crear_empresa(db_session, rut_empresa=rut, razon_social=razon_social, datos=datos)
 
     return _crear
 
@@ -71,7 +68,8 @@ class TestBuscadorEmpresas:
 
     def test_maximo_10_resultados(self, client, headers_agente, crear_empresa):
         for i in range(12):
-            crear_empresa(rut=f"7600000{i:02d}-0", razon_social=f"Empresa Serie {i:02d}")
+            # Cuerpo de 8 dígitos como máximo (ck_empresa_rut_formato: 7-8 dígitos).
+            crear_empresa(rut=f"760000{i:02d}-0", razon_social=f"Empresa Serie {i:02d}")
 
         resp = client.get(self.URL, params={"q": "serie"}, headers=headers_agente)
 
@@ -102,8 +100,10 @@ class TestEmpresasSugeridas:
         assert resp.status_code == 200
         assert resp.json() == []
 
-    def test_solicitud_sin_rut_sin_sugerencias(self, client, headers_agente, crear_solicitud):
-        sol = crear_solicitud(rut=None)
+    def test_solicitud_sin_rut_sin_sugerencias(self, client, headers_agente, crear_solicitud, db_session):
+        sol = crear_solicitud()
+        db_session.get(models.SolicitudContacto, sol["id_solicitud"]).rut = None
+        db_session.commit()
         assert client.get(self._url(sol["id_solicitud"]), headers=headers_agente).json() == []
 
     def test_sugiere_la_empresa_de_un_tramite_anterior_del_mismo_solicitante(
@@ -195,8 +195,8 @@ class TestConvertirConEmpresa:
     def test_cuerpo_vacio_o_id_nulo_equivale_a_sin_empresa(
         self, client, headers_agente, crear_solicitud, db_session
     ):
-        for cuerpo in ({}, {"id_empresa": None}):
-            sol = crear_solicitud(rut=None)
+        for rut, cuerpo in (("11111111-1", {}), ("22222222-2", {"id_empresa": None})):
+            sol = crear_solicitud(rut=rut)
             resp = _convertir_con(client, headers_agente, sol["id_solicitud"], **cuerpo)
             assert resp.status_code == 200
             assert db_session.get(models.Tramite, resp.json()["id_tramite"]).id_empresa is None

@@ -35,7 +35,7 @@ class TestConsultaPorCodigo:
         assert resp.json() == {
             "codigo_seguimiento": codigo,
             "nombre_servicio": "Constitución de Sociedad",
-            "estado_actual": "generado",
+            "estado_actual": "esperando_datos",
             "documento_disponible": False,
         }
 
@@ -103,15 +103,15 @@ class TestConsultaPorCodigo:
 
     def test_codigos_de_distintos_tramites_no_se_cruzan(
             self, client, crear_solicitud, convertir, seed):
-        s1 = crear_solicitud(rut="1-1")
-        s2 = crear_solicitud(rut="2-2", servicio_id=seed["servicio_inactivo"].id_servicio)
+        s1 = crear_solicitud(rut="11111111-1")
+        s2 = crear_solicitud(rut="22222222-2", servicio_id=seed["servicio_inactivo"].id_servicio)
         c1 = convertir(s1["id_solicitud"]).json()["codigo_seguimiento"]
         c2 = convertir(s2["id_solicitud"]).json()["codigo_seguimiento"]
         assert client.get(f"/api/tramites/codigo/{c1}").json()["nombre_servicio"] == "Constitución de Sociedad"
         assert client.get(f"/api/tramites/codigo/{c2}").json()["nombre_servicio"] == "Servicio descontinuado"
 
     @pytest.mark.parametrize("estado,esperado", [
-        ("generado", False), ("procesando_firma", False), ("en_revision", False),
+        ("esperando_datos", False), ("procesando_firma", False), ("en_revision", False),
         ("firmado", True), ("entregado", True),
     ])
     def test_documento_disponible_via_endpoint(
@@ -132,15 +132,14 @@ class TestDocumentoDisponible:
     def test_true_en_estados_finales(self, estado):
         assert crud.documento_disponible(models.Tramite(estado_actual=estado)) is True
 
-    @pytest.mark.parametrize("estado", ["generado", "procesando_firma", "en_revision", "", None, "otro"])
+    @pytest.mark.parametrize("estado", ["esperando_datos", "procesando_firma", "en_revision", "", None, "otro"])
     def test_false_en_otros_estados(self, estado):
         assert crud.documento_disponible(models.Tramite(estado_actual=estado)) is False
 
     @pytest.mark.parametrize("estado", ["FIRMADO", "Entregado", " firmado", "firmado "])
     def test_estados_con_otra_capitalizacion_o_espacios_dan_false(self, estado):
-        """OBSERVACIÓN: los estados son strings libres (no hay Enum ni CHECK en
-        BD). Un 'Firmado' cargado a mano o con un typo haría que el cliente
-        NUNCA vea su documento disponible, sin ningún error visible."""
+        """La comparación es exacta. En la base, la FK al catálogo estado_tramite
+        ya impide guardar un 'Firmado' o un estado con espacios."""
         assert crud.documento_disponible(models.Tramite(estado_actual=estado)) is False
 
     def test_conjunto_de_estados_exacto(self):
@@ -180,16 +179,30 @@ class TestInfra:
         resp = client.post(f"/api/solicitudes-contacto/{sol['id_solicitud']}/convertir")
         assert resp.status_code == 401
 
-    def test_drop_all_falla_por_fk_circular(self, tramite_generado, engine):
-        """HALLAZGO: solicitud_contacto.id_tramite_generado -> tramite y
-        tramite.id_solicitud_origen -> solicitud_contacto forman un ciclo.
-        SQLAlchemy avisa 'Can't sort tables for DROP' y, con datos y FK
-        activas, drop_all revienta. Solución: use_alter=True en una de las
-        dos ForeignKey (o manejar el esquema con Alembic)."""
+    def test_drop_all_funciona_sin_ciclo_de_fk(self, tramite_generado, engine, db_session):
+        """FIX: antes solicitud_contacto.id_tramite_generado -> tramite y
+        tramite.id_solicitud_origen -> solicitud_contacto formaban un ciclo y
+        drop_all reventaba. El vínculo ahora vive solo en el trámite, así que
+        las tablas se pueden ordenar y borrar aunque tengan datos."""
         import warnings
-        from sqlalchemy.exc import IntegrityError
+        from sqlalchemy import inspect, text
         from app.database import Base
+
+        # db_session (el que usa el fixture seed) queda con una transacción abierta
+        # ("idle in transaction") sosteniendo locks sobre usuario/tipo_tramite hasta
+        # que el test termina. Con Postgres real (a diferencia del StaticPool de
+        # SQLite, una sola conexión compartida) eso bloquea indefinidamente a
+        # drop_all. Se cierra a mano antes de borrar la base; session.close() es
+        # seguro llamarlo dos veces, así que el teardown del fixture no se queja después.
+        db_session.close()
+
+        with engine.begin() as conn:
+            # drop_all() solo conoce las tablas de Base.metadata, no esta vista de
+            # 02_funciones.sql: sin borrarla antes, Postgres rechaza DROP TABLE
+            # tramite porque la vista depende de ella.
+            conn.execute(text("DROP VIEW IF EXISTS v_plantilla_versiones"))
+
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            with pytest.raises(IntegrityError):
-                Base.metadata.drop_all(bind=engine)
+            warnings.simplefilter("error")  # tampoco debe avisar "Can't sort tables"
+            Base.metadata.drop_all(bind=engine)
+        assert inspect(engine).get_table_names() == []

@@ -1,4 +1,7 @@
-export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+// "" (string vacío, no undefined) significa "mismo origen que el frontend":
+// util cuando nginx hace de reverse proxy de /api hacia el backend (ver
+// nginx.conf), por ejemplo al exponer todo detrás de un único túnel ngrok.
+export const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
 export class ApiError extends Error {
   constructor(message, status) {

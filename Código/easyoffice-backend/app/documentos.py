@@ -126,6 +126,8 @@ def generar(db: Session, tramite: models.Tramite) -> dict:
     os.replace(temporal, destino)               # el PDF anterior nunca queda a medias
 
     tramite.ruta_documento_generado = relativa
+    # Queda registrada la versión exacta de la plantilla que se usó (la base exige ambos juntos).
+    tramite.id_plantilla = plantilla.id_plantilla
     db.commit()
     db.refresh(tramite)
     log.info("Documento generado: trámite %s, plantilla v%s", tramite.id_tramite, plantilla.version)
@@ -135,5 +137,5 @@ def generar(db: Session, tramite: models.Tramite) -> dict:
         "nombre_archivo": nombre_para_descargar(tramite),
         "tamano_bytes": len(pdf),
         "hash_sha256": hashlib.sha256(pdf).hexdigest(),
-        "version_plantilla": plantilla.version,
+        "version_plantilla": str(plantilla.version),
     }

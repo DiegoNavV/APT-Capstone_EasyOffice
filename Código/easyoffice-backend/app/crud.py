@@ -5,7 +5,7 @@ import secrets
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func, or_
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, InternalError
 from sqlalchemy.orm import Session, contains_eager, joinedload
 
 from app import campos_servicio, condiciones as reglas_condiciones, enmascarado, models, schemas
@@ -13,9 +13,26 @@ from app.utils import normalizar_rut
 
 ESTADOS_DOCUMENTO_DISPONIBLE = {"firmado", "entregado"}
 
+# Estado inicial del trámite: el código ya existe y falta que el cliente envíe sus datos.
+ESTADO_ESPERANDO_DATOS = "esperando_datos"
+
 # Agrupación de estados para los KPIs del panel de trámites.
-ESTADOS_PENDIENTES_DATOS = ("generado",)
+ESTADOS_PENDIENTES_DATOS = (ESTADO_ESPERANDO_DATOS,)
 ESTADOS_EN_PROCESO = ("procesando_firma", "en_revision")
+
+# Estados de una solicitud de contacto (ver el CHECK ck_solicitud_estado de la base).
+SOLICITUD_PENDIENTE = "pendiente"
+SOLICITUD_CONVERTIDA = "convertida"
+SOLICITUD_DESCARTADA = "descartada"
+
+# Versión del texto de consentimiento (tratamiento de datos y no edición) que acepta el cliente al enviar sus
+# datos. Si cambia el texto que muestra el formulario, se sube esta versión: así queda constancia de qué aceptó cada uno.
+VERSION_CONSENTIMIENTO = "2026-10"
+
+
+def ahora_utc() -> datetime:
+    """Hora actual en UTC sin zona, igual que las columnas TIMESTAMP de la base."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def servicio_existe(db: Session, id_servicio: int) -> bool:
@@ -30,7 +47,7 @@ def crear_solicitud(db: Session, datos: schemas.SolicitudContactoCreate) -> mode
         telefono=datos.telefono,
         id_servicio=datos.servicio_id,
         mensaje=datos.mensaje,
-        estado="pendiente",
+        estado=SOLICITUD_PENDIENTE,
     )
     db.add(solicitud)
     db.commit()
@@ -40,6 +57,24 @@ def crear_solicitud(db: Session, datos: schemas.SolicitudContactoCreate) -> mode
 
 def obtener_solicitud(db: Session, id_solicitud: int) -> models.SolicitudContacto | None:
     return db.get(models.SolicitudContacto, id_solicitud)
+
+
+def descartar_solicitud(db: Session, solicitud: models.SolicitudContacto, motivo: str) -> models.SolicitudContacto:
+    """Cierra la solicitud sin convertirla en trámite (el cliente no respondió, es duplicada, etc.).
+
+    No se puede descartar una solicitud ya convertida ni una ya descartada. Una solicitud descartada SÍ se
+    puede convertir después (ver convertir_solicitud_a_tramite): el cliente puede volver y pagar."""
+    if solicitud.estado == SOLICITUD_CONVERTIDA:
+        raise ValueError("Esta solicitud ya fue convertida en un trámite.")
+    if solicitud.estado == SOLICITUD_DESCARTADA:
+        raise ValueError("Esta solicitud ya fue descartada.")
+
+    solicitud.estado = SOLICITUD_DESCARTADA
+    solicitud.motivo_descarte = motivo
+    solicitud.fecha_cierre = ahora_utc()
+    db.commit()
+    db.refresh(solicitud)
+    return solicitud
 
 
 def listar_solicitudes(
@@ -65,19 +100,24 @@ def listar_solicitudes(
         .all()
     )
 
-    # Una sola consulta extra para todos los códigos (evita N+1).
-    ids_tramite = [s.id_tramite_generado for s in solicitudes if s.id_tramite_generado]
-    codigos: dict[int, str] = {}
-    folios: dict[int, str | None] = {}
-    if ids_tramite:
+    # Una sola consulta extra para los trámites de todas las solicitudes (evita N+1).
+    # El vínculo vive en tramite.solicitud_contacto_id.
+    ids_solicitud = [s.id_solicitud for s in solicitudes]
+    tramites: dict[int, tuple[int, str, str | None]] = {}
+    if ids_solicitud:
         filas = (
-            db.query(models.Tramite.id_tramite, models.Tramite.codigo_seguimiento, models.Tramite.folio)
-            .filter(models.Tramite.id_tramite.in_(ids_tramite))
+            db.query(
+                models.Tramite.id_solicitud_origen,
+                models.Tramite.id_tramite,
+                models.Tramite.codigo_seguimiento,
+                models.Tramite.folio,
+            )
+            .filter(models.Tramite.id_solicitud_origen.in_(ids_solicitud))
             .all()
         )
-        codigos = {fila.id_tramite: fila.codigo_seguimiento for fila in filas}
-        folios = {fila.id_tramite: fila.folio for fila in filas}
+        tramites = {f.id_solicitud_origen: (f.id_tramite, f.codigo_seguimiento, f.folio) for f in filas}
 
+    sin_tramite = (None, None, None)
     return [
         schemas.SolicitudListadoOut(
             id_solicitud=s.id_solicitud,
@@ -89,9 +129,10 @@ def listar_solicitudes(
             estado=s.estado,
             id_servicio=s.id_servicio,
             nombre_servicio=s.servicio.nombre if s.servicio else None,
-            id_tramite_generado=s.id_tramite_generado,
-            codigo_seguimiento=codigos.get(s.id_tramite_generado),
-            folio=folios.get(s.id_tramite_generado),
+            id_tramite_generado=tramites.get(s.id_solicitud, sin_tramite)[0],
+            codigo_seguimiento=tramites.get(s.id_solicitud, sin_tramite)[1],
+            folio=tramites.get(s.id_solicitud, sin_tramite)[2],
+            motivo_descarte=s.motivo_descarte,
             fecha_creacion=s.fecha_creacion,
         )
         for s in solicitudes
@@ -192,22 +233,23 @@ def convertir_solicitud_a_tramite(
 
     Lanza ValueError (datos inválidos), ConflictoDeFolio (reintentar) o RuntimeError (sin código único)."""
 
-    if solicitud.estado == "convertido":
+    if solicitud.estado == SOLICITUD_CONVERTIDA:
         raise ValueError("Esta solicitud ya fue convertida en un trámite.")
     if not solicitud.id_servicio:
         raise ValueError("La solicitud no tiene un servicio definido; no se puede convertir.")
+    # El RUN identifica al cliente y es obligatorio en la base (cliente.run).
+    if not solicitud.rut:
+        raise ValueError("La solicitud no tiene RUN; no se puede convertir.")
     if condiciones is not None and sucursal is None:
         raise ValueError("Para fijar las condiciones del contrato hay que indicar la sucursal.")
 
     # Se valida antes de tocar la base: si algo falla, no queda nada a medias.
     condiciones_json = _armar_condiciones(db, condiciones) if condiciones is not None else None
 
-    # El cliente no tiene cuenta; se busca o se crea por RUT (ya normalizado por
+    # El cliente no tiene cuenta; se busca o se crea por RUN (ya normalizado por
     # el schema al crear la solicitud) para no duplicarlo si ya había hecho una
     # solicitud antes.
-    cliente = None
-    if solicitud.rut:
-        cliente = db.query(models.Cliente).filter_by(rut=solicitud.rut).first()
+    cliente = db.query(models.Cliente).filter_by(rut=solicitud.rut).first()
     if not cliente:
         cliente = models.Cliente(
             nombre=solicitud.nombre,
@@ -233,7 +275,7 @@ def convertir_solicitud_a_tramite(
             folio=folio,
             condiciones=condiciones_json,
             codigo_seguimiento=_generar_codigo_unico(db),
-            estado_actual="generado",
+            estado_actual=ESTADO_ESPERANDO_DATOS,
         )
         db.add(tramite)
         db.flush()
@@ -245,19 +287,27 @@ def convertir_solicitud_a_tramite(
             comentario += f" Sucursal {sucursal.nombre}, folio {folio}."
         db.add(models.HistorialEstado(
             id_tramite=tramite.id_tramite,
-            estado="generado",
+            estado=ESTADO_ESPERANDO_DATOS,
+            origen="agente",
             comentario=comentario,
             id_usuario=id_usuario_responsable,
         ))
 
-        solicitud.estado = "convertido"
-        solicitud.id_tramite_generado = tramite.id_tramite
+        solicitud.estado = SOLICITUD_CONVERTIDA
+        solicitud.fecha_cierre = ahora_utc()
+        # Una solicitud descartada que finalmente se convierte deja de tener motivo de descarte
+        # (la base exige motivo solo en las descartadas).
+        solicitud.motivo_descarte = None
 
         db.commit()
     except IntegrityError:
-        # Lo único que puede chocar aquí es el folio (el código ya se verificó):
-        # otro agente tomó ese número en el mismo instante.
         db.rollback()
+        # La base no deja dos trámites para la misma solicitud (tramite.solicitud_contacto_id es único):
+        # otro agente la convirtió en el mismo instante.
+        if db.query(models.Tramite).filter_by(id_solicitud_origen=solicitud.id_solicitud).first():
+            raise ValueError("Esta solicitud ya fue convertida en un trámite.") from None
+        # Si no, lo único que puede chocar es el folio (el código ya se verificó):
+        # otro agente tomó ese número en el mismo instante.
         raise ConflictoDeFolio("Otro agente generó un folio al mismo tiempo. Intenta nuevamente.")
     db.refresh(tramite)
     return tramite
@@ -408,25 +458,26 @@ def registrar_envio_datos(
 
     try:
         if empresa is None:
-            rut = columnas.get("rut_empresa")
-            razon = columnas.get("razon_social")
-            if not rut or not razon:
+            if not all(columnas.get(clave) for clave in CLAVES_MINIMAS_EMPRESA):
                 # La definición del servicio no pide lo mínimo para crear la empresa.
                 raise FormularioNoDisponible()
-            if db.query(models.Empresa).filter_by(rut_empresa=rut).first():
+            if db.query(models.Empresa).filter_by(rut_empresa=columnas["rut_empresa"]).first():
                 raise RutNoDisponible()
-            empresa = models.Empresa(rut_empresa=rut, razon_social=razon, datos=datos)
+            empresa = models.Empresa(
+                rut_empresa=columnas["rut_empresa"],
+                razon_social=columnas["razon_social"],
+                representante=_representante_para(db, columnas),
+                datos={},
+            )
             db.add(empresa)
-            db.flush()
-            tramite.id_empresa = empresa.id_empresa
-        elif datos:
-            # Se asigna un diccionario nuevo: SQLAlchemy no detecta cambios dentro del JSON.
-            empresa.datos = {**(empresa.datos or {}), **datos}
+        _completar_empresa(empresa, columnas, datos)
+        db.flush()
+        tramite.id_empresa = empresa.id_empresa
 
         db.add(models.DatosEmpresaTramite(
             id_tramite=tramite.id_tramite,
             solicitante_es_representante=envio.solicitante_es_representante,
-            consentimiento_aceptado=True,
+            version_consentimiento=VERSION_CONSENTIMIENTO,
         ))
 
         nuevo_estado = "en_revision" if tramite.servicio.requiere_revision_humana else "procesando_firma"
@@ -434,6 +485,7 @@ def registrar_envio_datos(
         db.add(models.HistorialEstado(
             id_tramite=tramite.id_tramite,
             estado=nuevo_estado,
+            origen="cliente",
             comentario=(
                 "El cliente envió sus datos. Queda en revisión."
                 if nuevo_estado == "en_revision"
@@ -444,8 +496,11 @@ def registrar_envio_datos(
     except EnvioDatosRechazado:
         db.rollback()
         raise
-    except IntegrityError:
-        # Dos envíos casi simultáneos, o el mismo RUT creado justo antes por otro.
+    except (IntegrityError, InternalError):
+        # Dos envíos casi simultáneos, o el mismo RUT creado justo antes por otro. El segundo
+        # también puede chocar primero con fn_historial_no_duplicado (02_funciones.sql) -- no
+        # repite el mismo estado_tramite_codigo dos veces seguidas -- que levanta un
+        # InternalError (RAISE de PL/pgSQL), no un IntegrityError de constraint.
         db.rollback()
         if db.query(models.DatosEmpresaTramite).filter_by(id_tramite=tramite.id_tramite).first():
             raise DatosYaEnviados() from None
@@ -453,6 +508,51 @@ def registrar_envio_datos(
 
     db.refresh(tramite)
     return tramite
+
+
+# Lo mínimo para crear una empresa nueva: sin representante no se puede (empresa.representante_legal_id es obligatorio).
+CLAVES_MINIMAS_EMPRESA = ("rut_empresa", "razon_social", "representante_legal", "rut_representante")
+
+# Campos del formulario que se guardan en el representante legal y no en la empresa: {clave del campo: atributo}.
+CAMPOS_REPRESENTANTE = {
+    "representante_legal": "nombre",
+    "rut_representante": "rut",
+    "domicilio_representante": "domicilio",
+    "comuna_representante": "comuna",
+    "region_representante": "region",
+}
+
+
+def _representante_para(db: Session, valores: dict) -> models.RepresentanteLegal:
+    """El representante con ese RUN, o uno nuevo. Una misma persona puede representar a varias empresas:
+    si ya existe se reutiliza tal cual (sus datos registrados no se sobrescriben; los vacíos los completa
+    _completar_empresa)."""
+    representante = (
+        db.query(models.RepresentanteLegal).filter_by(rut=valores["rut_representante"]).first()
+    )
+    if representante is None:
+        representante = models.RepresentanteLegal(
+            rut=valores["rut_representante"], nombre=valores["representante_legal"]
+        )
+        db.add(representante)
+    return representante
+
+
+def _completar_empresa(empresa: models.Empresa, columnas: dict, datos: dict) -> None:
+    """Escribe en la empresa (y en su representante) solo los campos que siguen vacíos: nunca se sobrescribe
+    un dato registrado. `columnas` y `datos` vienen de campos_servicio.separar_para_guardar."""
+    for clave, valor in columnas.items():
+        if clave in CAMPOS_REPRESENTANTE:
+            destino, atributo = empresa.representante, CAMPOS_REPRESENTANTE[clave]
+        else:
+            destino, atributo = empresa, clave
+        if getattr(destino, atributo) in (None, ""):
+            if clave == "fecha_escritura":
+                valor = date.fromisoformat(valor)
+            setattr(destino, atributo, valor)
+    if datos:
+        # Se asigna un diccionario nuevo: SQLAlchemy no detecta cambios dentro del JSON.
+        empresa.datos = {**datos, **(empresa.datos or {})}
 
 
 def documento_disponible(tramite: models.Tramite) -> bool:
@@ -463,16 +563,8 @@ def documento_disponible(tramite: models.Tramite) -> bool:
 # Formulario del cliente (público, se accede con el código del trámite)
 # ---------------------------------------------------------------------------
 
-ESTADO_ESPERANDO_DATOS = "generado"
-
-
-def valor_guardado(empresa: models.Empresa | None, campo: campos_servicio.Campo):
-    """Lo que la empresa vinculada ya tiene para este campo (None si no hay)."""
-    if empresa is None:
-        return None
-    if campo.en_columna:
-        return getattr(empresa, campo.clave, None)
-    return (empresa.datos or {}).get(campo.clave)
+# Se mantiene acá porque lo usan la vista previa y los tests; vive en campos_servicio.
+valor_guardado = campos_servicio.valor_guardado
 
 
 def obtener_formulario(tramite: models.Tramite) -> schemas.FormularioOut:
@@ -760,6 +852,24 @@ def listar_clientes(
     )
 
 
+def _empresa_para_ficha(empresa: models.Empresa) -> schemas.EmpresaResumenOut:
+    """La ficha 360° muestra todos los datos registrados de la empresa en `datos`, con las mismas claves del
+    formulario (representante_legal, giro_principal...), aunque hoy vivan en columnas y en el representante."""
+    datos = dict(empresa.datos or {})
+    for campo in campos_servicio.CAMPOS_CONTRATO:
+        if campo.clave in ("razon_social", "rut_empresa"):
+            continue
+        valor = campos_servicio.valor_guardado(empresa, campo)
+        if valor:
+            datos[campo.clave] = valor
+    return schemas.EmpresaResumenOut(
+        id_empresa=empresa.id_empresa,
+        rut_empresa=empresa.rut_empresa,
+        razon_social=empresa.razon_social,
+        datos=datos,
+    )
+
+
 def obtener_cliente_detalle(db: Session, id_cliente: int) -> schemas.ClienteDetalleOut | None:
     """Ficha de cliente 360°: datos de contacto, las empresas que vinculó en
     alguno de sus trámites, y el historial completo de trámites. None si el
@@ -794,7 +904,7 @@ def obtener_cliente_detalle(db: Session, id_cliente: int) -> schemas.ClienteDeta
         email=cliente.email,
         telefono=cliente.telefono,
         fecha_creacion=cliente.fecha_creacion,
-        empresas=[schemas.EmpresaResumenOut.model_validate(e) for e in empresas],
+        empresas=[_empresa_para_ficha(e) for e in empresas],
         tramites=[
             schemas.TramiteClienteOut(
                 id_tramite=t.id_tramite,

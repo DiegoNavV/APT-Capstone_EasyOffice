@@ -7,6 +7,7 @@ import pytest
 
 from app import crud, models, schemas
 from app.seguridad import limiter
+from tests.conftest import crear_empresa
 
 CONTRATO = "Contrato de servicio"
 AUTORIZACION = "Autorización de domicilio tributario"
@@ -61,26 +62,21 @@ def tramite_de(crear_solicitud, convertir, seed, db_session):
 
 @pytest.fixture()
 def empresa_completa(db_session):
-    empresa = models.Empresa(
+    return crear_empresa(
+        db_session,
         rut_empresa="76123456-0",
         razon_social="Comercial Prueba SpA",
-        datos={
-            "representante_legal": "Ana Soto Pérez",
-            "rut_representante": "11222333-9",
-            "domicilio_representante": "Av. Siempre Viva 742",
-            "comuna_representante": "Providencia",
-            "region_representante": "Metropolitana",
-            "giro_principal": "Venta de artículos de oficina",
-            "email": "ana@prueba.cl",
-            "celular": "912345678",
-            "fecha_escritura": "2020-05-15",
-            "notaria": "Notaría 5",
-        },
+        representante_legal="Ana Soto Pérez",
+        rut_representante="11222333-9",
+        domicilio_representante="Av. Siempre Viva 742",
+        comuna_representante="Providencia",
+        region_representante="Metropolitana",
+        giro_principal="Venta de artículos de oficina",
+        email="ana@prueba.cl",
+        celular="912345678",
+        fecha_escritura="2020-05-15",
+        notaria="Notaría 5",
     )
-    db_session.add(empresa)
-    db_session.commit()
-    db_session.refresh(empresa)
-    return empresa
 
 
 def _enviar(client, codigo, cuerpo):
@@ -119,10 +115,13 @@ class TestEnvioExitoso:
         empresa = db_session.query(models.Empresa).one()
         assert empresa.rut_empresa == "76123456-0"
         assert empresa.razon_social == "Comercial Prueba SpA"
-        assert empresa.datos["rut_representante"] == "11222333-9"
-        assert empresa.datos["celular"] == "912345678"
-        assert empresa.datos["email"] == "ana@prueba.cl"
-        assert "razon_social" not in empresa.datos and "rut_empresa" not in empresa.datos
+        assert empresa.rut_representante == "11222333-9"
+        assert empresa.representante.nombre == "Ana Soto Pérez"
+        assert empresa.celular == "912345678"
+        assert empresa.email == "ana@prueba.cl"
+        assert empresa.fecha_escritura.isoformat() == "2020-05-15"
+        # Los 12 campos del contrato tienen columna propia: no queda nada en el JSON.
+        assert empresa.datos == {}
 
     def test_registra_el_envio_con_sus_confirmaciones(self, client, tramite_de, db_session):
         tramite = tramite_de()
@@ -131,19 +130,21 @@ class TestEnvioExitoso:
         envio = db_session.query(models.DatosEmpresaTramite).one()
         assert envio.id_tramite == tramite.id_tramite
         assert envio.solicitante_es_representante is False
-        assert envio.consentimiento_aceptado is True
+        assert envio.version_consentimiento == crud.VERSION_CONSENTIMIENTO
 
     def test_deja_constancia_en_el_historial(self, client, tramite_de, db_session):
         tramite = tramite_de()
         _enviar(client, tramite.codigo_seguimiento, _cuerpo(CAMPOS_CONTRATO))
 
-        estados = [
-            h.estado
-            for h in db_session.query(models.HistorialEstado)
+        historial = (
+            db_session.query(models.HistorialEstado)
             .filter_by(id_tramite=tramite.id_tramite)
             .order_by(models.HistorialEstado.id_historial)
-        ]
-        assert estados == ["generado", "procesando_firma"]
+            .all()
+        )
+        assert [(h.estado, h.origen) for h in historial] == [
+            ("esperando_datos", "agente"), ("procesando_firma", "cliente")]
+        assert historial[1].id_usuario is None  # el cliente no tiene cuenta
 
     def test_autorizacion_pide_y_guarda_solo_sus_4_campos(self, client, tramite_de, db_session):
         tramite = tramite_de(AUTORIZACION)
@@ -152,7 +153,8 @@ class TestEnvioExitoso:
 
         assert resp.status_code == 200
         empresa = db_session.query(models.Empresa).one()
-        assert set(empresa.datos) == {"representante_legal", "rut_representante"}
+        assert empresa.representante_legal == "Ana Soto Pérez"
+        assert empresa.giro_principal is None and empresa.email is None and empresa.domicilio_representante is None
 
     def test_servicio_con_revision_humana_pasa_a_en_revision(self, client, tramite_de, db_session):
         tramite = tramite_de(requiere_revision=True)
@@ -187,17 +189,15 @@ class TestConEmpresaVinculada:
         assert db_session.query(models.Empresa).count() == 1
 
     def test_completa_solo_lo_que_falta_sin_pisar_lo_existente(self, client, tramite_de, db_session):
-        parcial = models.Empresa(
-            rut_empresa="76123456-0",
-            razon_social="Parcial SpA",
-            datos={"email": "original@parcial.cl"},
+        # Toda empresa tiene representante (nombre y RUT); el resto puede faltar.
+        parcial = crear_empresa(
+            db_session, rut_empresa="76123456-0", razon_social="Parcial SpA",
+            representante_legal="Ana Soto Pérez", rut_representante="11222333-9", email="original@parcial.cl",
         )
-        db_session.add(parcial)
-        db_session.commit()
         tramite = tramite_de(empresa=parcial)
         faltantes = {
             k: v for k, v in CAMPOS_CONTRATO.items()
-            if k not in ("razon_social", "rut_empresa", "email")
+            if k not in ("razon_social", "rut_empresa", "email", "representante_legal", "rut_representante")
         }
 
         resp = _enviar(client, tramite.codigo_seguimiento, _cuerpo(faltantes))
@@ -206,9 +206,10 @@ class TestConEmpresaVinculada:
         db_session.expire_all()
         empresa = db_session.query(models.Empresa).one()
         assert empresa.razon_social == "Parcial SpA"
-        assert empresa.datos["email"] == "original@parcial.cl"
-        assert empresa.datos["celular"] == "912345678"
-        assert empresa.datos["notaria"] == "Notaría 5"
+        assert empresa.email == "original@parcial.cl"
+        assert empresa.celular == "912345678"
+        assert empresa.notaria == "Notaría 5"
+        assert empresa.representante.domicilio == "Av. Siempre Viva 742"
 
     def test_un_campo_ya_registrado_se_rechaza_nombrandolo_y_no_se_modifica(
         self, client, tramite_de, empresa_completa, db_session
@@ -222,9 +223,9 @@ class TestConEmpresaVinculada:
         assert list(errores) == ["email"]
         assert "ya está registrado" in errores["email"]
         db_session.expire_all()
-        assert db_session.query(models.Empresa).one().datos["email"] == "ana@prueba.cl"
+        assert db_session.query(models.Empresa).one().email == "ana@prueba.cl"
         assert db_session.query(models.DatosEmpresaTramite).count() == 0
-        assert _estado_guardado(db_session, tramite).estado_actual == "generado"
+        assert _estado_guardado(db_session, tramite).estado_actual == "esperando_datos"
 
     def test_la_autorizacion_reutiliza_la_empresa_creada_por_otro_tramite(
         self, client, tramite_de, empresa_completa
@@ -274,7 +275,7 @@ class TestRechazosDeCampos:
 
         assert db_session.query(models.Empresa).count() == 0
         assert db_session.query(models.DatosEmpresaTramite).count() == 0
-        assert _estado_guardado(db_session, tramite).estado_actual == "generado"
+        assert _estado_guardado(db_session, tramite).estado_actual == "esperando_datos"
         assert db_session.query(models.HistorialEstado).filter_by(id_tramite=tramite.id_tramite).count() == 1
 
 
@@ -288,7 +289,7 @@ class TestConfirmaciones:
         assert resp.status_code == 422
         assert list(resp.json()["detail"]["errores"]) == [faltante]
         assert db_session.query(models.Empresa).count() == 0
-        assert _estado_guardado(db_session, tramite).estado_actual == "generado"
+        assert _estado_guardado(db_session, tramite).estado_actual == "esperando_datos"
 
     def test_sin_ninguna_confirmacion_informa_ambas(self, client, tramite_de):
         tramite = tramite_de()
@@ -388,11 +389,11 @@ class TestRutDeEmpresaExistente:
 
         guardado = _estado_guardado(db_session, tramite)
         assert guardado.id_empresa is None
-        assert guardado.estado_actual == "generado"
+        assert guardado.estado_actual == "esperando_datos"
         assert db_session.query(models.DatosEmpresaTramite).count() == 0
         assert db_session.query(models.Empresa).count() == 1
         # La empresa existente quedó intacta.
-        assert db_session.query(models.Empresa).one().datos["email"] == "ana@prueba.cl"
+        assert db_session.query(models.Empresa).one().email == "ana@prueba.cl"
 
     def test_se_puede_reintentar_con_otro_rut_despues_del_rechazo(
         self, client, tramite_de, empresa_completa

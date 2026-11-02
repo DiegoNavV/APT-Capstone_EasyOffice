@@ -31,17 +31,18 @@ class Campo:
     etiqueta: str         # texto que ve el cliente en el formulario
     tipo: str             # texto | rut | email | celular | fecha
     columna_excel: str    # encabezado exacto en la planilla de Easy Office
-    en_columna: bool = False   # True: va en una columna propia de la tabla
+    en_columna: bool = True    # True: es un atributo de models.Empresa; False: va en su JSON `datos`
     max_largo: int = 150
     ayuda: str = ""
 
 
-# Los 12 datos que usa el contrato. Los dos primeros van en columnas propias
-# de la tabla empresa (la lista del panel los muestra y los busca); el resto,
-# en su JSON `datos`.
+# Los 12 datos que usa el contrato. Todos son atributos de models.Empresa: columnas propias de la
+# tabla empresa, salvo los del representante legal, que viven en la tabla representante_legal.
+# Un campo nuevo que Easy Office agregue despues puede ir con en_columna=False (al JSON `datos`)
+# hasta que se le cree su columna.
 CAMPOS_CONTRATO: tuple[Campo, ...] = (
-    Campo("razon_social", "Razón social", "texto", "RAZON SOCIAL", en_columna=True, max_largo=200),
-    Campo("rut_empresa", "RUT de la empresa", "rut", "R.U.T.", en_columna=True, max_largo=15,
+    Campo("razon_social", "Razón social", "texto", "RAZON SOCIAL", max_largo=200),
+    Campo("rut_empresa", "RUT de la empresa", "rut", "R.U.T.", max_largo=15,
           ayuda="Ejemplo: 76.123.456-0"),
     Campo("representante_legal", "Nombre del representante legal", "texto", "REPRESENTANTE LEGAL"),
     Campo("rut_representante", "RUT del representante legal", "rut", "RUT REP. LEGAL", max_largo=15),
@@ -190,7 +191,21 @@ def validar_campos(definicion: tuple[Campo, ...], valores: dict) -> dict[str, st
 
 
 def separar_para_guardar(definicion: tuple[Campo, ...], limpios: dict[str, str]) -> tuple[dict, dict]:
-    """Divide los valores ya validados en (columnas propias, JSON `datos`)."""
+    """Divide los valores ya validados en (atributos de la empresa, JSON `datos`)."""
     columnas = {c.clave: limpios[c.clave] for c in definicion if c.en_columna}
     datos = {c.clave: limpios[c.clave] for c in definicion if not c.en_columna}
     return columnas, datos
+
+
+def valor_guardado(empresa, campo: Campo) -> str | None:
+    """Lo que la empresa ya tiene para este campo (None si no hay), siempre como texto: las fechas
+    salen en formato AAAA-MM-DD, igual que las escribe el cliente."""
+    if empresa is None:
+        return None
+    if campo.en_columna:
+        valor = getattr(empresa, campo.clave, None)
+    else:
+        valor = (empresa.datos or {}).get(campo.clave)
+    if isinstance(valor, date):
+        return valor.isoformat()
+    return valor

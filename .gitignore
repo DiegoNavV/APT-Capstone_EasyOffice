@@ -1,2 +1,9 @@
 detener-entorno.bat
 iniciar-entorno.bat
+ideas accesibilidad o innovación.txt
+
+# Herramientas de Claude Code (skills) — solo locales, no se suben al repo
+.claude/
+.agents/
+skills-lock.json
+atlas-local/

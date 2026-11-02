@@ -71,6 +71,19 @@ def _rut_empresa_nuevo(db) -> str:
     raise RuntimeError("No se pudo generar un RUT de empresa único para la demo.")
 
 
+def _representante_demo(db) -> models.RepresentanteLegal:
+    """Toda empresa necesita representante legal. Si el RUN sorteado ya existe se reutiliza (una persona
+    puede representar a varias empresas)."""
+    run = _rut(random.randint(10_000_000, 24_999_999))
+    representante = db.query(models.RepresentanteLegal).filter_by(rut=run).first()
+    if representante is None:
+        representante = models.RepresentanteLegal(
+            rut=run, nombre=f"{random.choice(NOMBRES)} {random.choice(APELLIDOS)}",
+            domicilio="Demo 123", comuna="Santiago", region="Metropolitana",
+        )
+    return representante
+
+
 def _usuario_demo(db, nombre: str, email: str, rol: str) -> models.Usuario:
     u = db.query(models.Usuario).filter_by(email=email).first()
     if u:
@@ -90,7 +103,7 @@ def main() -> None:
     sucursales = db.query(models.Sucursal).filter_by(activa=True).all()
     servicios_ofrecidos = db.query(models.ServicioOfrecido).filter_by(activo=True).all()
     if not servicios:
-        print("No hay servicio_contratado activo -- corre primero db/init/02_seed.sql.")
+        print("No hay tipo_tramite activo -- corre primero db/init/04_datos_base.sql.")
         raise SystemExit(1)
 
     agente = _usuario_demo(db, "Rocío Agente Demo", "agente.demo@easyoffice.cl", "agente")
@@ -111,7 +124,7 @@ def main() -> None:
         ))
         creadas += 1
 
-    ESTADOS_SIMULADOS = ["generado", "en_revision", "procesando_firma", "firmado", "entregado"]
+    ESTADOS_SIMULADOS = ["esperando_datos", "en_revision", "procesando_firma", "firmado", "entregado"]
 
     for n in range(N_PENDIENTES, N_PENDIENTES + N_CONVERTIDAS):
         p = _persona(n)
@@ -156,12 +169,12 @@ def main() -> None:
         tramite.estado_actual = estado_final
         tramite.fecha_creacion = fecha_base
         tramite.fecha_actualizacion = fecha_base + timedelta(hours=idx_final * 6)
-        # convertir_solicitud_a_tramite ya dejó un historial_estado "generado" --
+        # convertir_solicitud_a_tramite ya dejó un historial_estado "esperando_datos" --
         # si el estado simulado es ese mismo, no se repite (el trigger
-        # trg_historial_estado_no_duplicado lo rechaza, y con razón).
-        if estado_final != "generado":
+        # trg_historial_no_duplicado lo rechaza, y con razón).
+        if estado_final != crud.ESTADO_ESPERANDO_DATOS:
             db.add(models.HistorialEstado(
-                id_tramite=tramite.id_tramite, estado=estado_final,
+                id_tramite=tramite.id_tramite, estado=estado_final, origen="agente",
                 comentario="Estado simulado por scripts/sembrar_demo.py.",
                 id_usuario=responsable.id_usuario, fecha=tramite.fecha_actualizacion,
             ))
@@ -173,7 +186,9 @@ def main() -> None:
             empresa = models.Empresa(
                 rut_empresa=_rut_empresa_nuevo(db),
                 razon_social=nombre_empresa,
-                datos={"giro": "Servicios", "direccion": "Demo 123, Santiago"},
+                giro_principal="Servicios",
+                representante=_representante_demo(db),
+                datos={},
             )
             db.add(empresa)
             db.flush()

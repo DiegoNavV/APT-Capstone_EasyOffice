@@ -6,7 +6,7 @@ Uso (con los contenedores levantados):
     (pide la contraseña sin mostrarla en pantalla)
 
 <rol> es "administrador" o "agente", tal como está cargado en la tabla rol
-(ver db/init/02_seed.sql).
+(ver db/init/04_datos_base.sql).
 """
 import getpass
 import sys
@@ -52,7 +52,7 @@ def main() -> None:
 
         rol = db.query(models.Rol).filter(models.Rol.nombre == nombre_rol).first()
         if rol is None:
-            print(f"No existe el rol '{nombre_rol}'. Revisa que se haya cargado db/init/02_seed.sql.")
+            print(f"No existe el rol '{nombre_rol}'. Revisa que se haya cargado db/init/04_datos_base.sql.")
             raise SystemExit(1)
 
         db.add(models.Usuario(

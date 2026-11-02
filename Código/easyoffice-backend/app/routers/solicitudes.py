@@ -28,7 +28,7 @@ def listar_solicitudes_contacto(
     _usuario: models.Usuario = Depends(get_usuario_actual),
 ):
     """Uso del panel de agentes/admins (requiere login): lista las solicitudes de contacto, las más recientes primero. 
-    Devuelve datos personales de clientes, por eso NO puede quedar público. Filtro opcional ?estado=pendiente|convertido."""
+    Devuelve datos personales de clientes, por eso NO puede quedar público. Filtro opcional ?estado=pendiente|convertida|descartada."""
     return crud.listar_solicitudes(db, estado=estado, limit=limit, offset=offset)
 
 
@@ -57,6 +57,45 @@ def empresas_sugeridas_de_solicitud(
     if not solicitud:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada.")
     return crud.empresas_sugeridas(db, solicitud)
+
+
+@router.post("/{id_solicitud}/descartar", response_model=schemas.SolicitudListadoOut)
+def descartar_solicitud_contacto(
+    id_solicitud: int,
+    datos: schemas.DescartarSolicitudIn,
+    db: Session = Depends(get_db),
+    _usuario: models.Usuario = Depends(get_usuario_actual),
+):
+    """
+    Uso del panel de agentes/admins (requiere login): cierra la solicitud sin convertirla en trámite (el cliente no
+    respondió, pidió otra cosa, es duplicada, etc.). Exige un motivo. No se puede descartar una solicitud ya
+    convertida en trámite ni una ya descartada; una descartada sí se puede convertir después si el cliente vuelve.
+    """
+    solicitud = crud.obtener_solicitud(db, id_solicitud)
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada.")
+
+    try:
+        solicitud = crud.descartar_solicitud(db, solicitud, datos.motivo)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return schemas.SolicitudListadoOut(
+        id_solicitud=solicitud.id_solicitud,
+        nombre=solicitud.nombre,
+        rut=solicitud.rut,
+        email=solicitud.email,
+        telefono=solicitud.telefono,
+        mensaje=solicitud.mensaje,
+        estado=solicitud.estado,
+        id_servicio=solicitud.id_servicio,
+        nombre_servicio=solicitud.servicio.nombre if solicitud.servicio else None,
+        id_tramite_generado=None,
+        codigo_seguimiento=None,
+        folio=None,
+        motivo_descarte=solicitud.motivo_descarte,
+        fecha_creacion=solicitud.fecha_creacion,
+    )
 
 
 @router.post("/{id_solicitud}/convertir", response_model=schemas.TramiteOut)

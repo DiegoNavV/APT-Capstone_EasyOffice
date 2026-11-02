@@ -13,6 +13,24 @@ jobs:
     defaults:
       run:
         working-directory: Código/easyoffice-backend
+    # Los tests corren contra un Postgres real (ver tests/conftest.py): recrean su propia
+    # base crm_easyoffice_test en este servicio con los mismos archivos de db/init/ que usa
+    # Docker en desarrollo, para probar los CHECK/triggers/funciones reales del esquema.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: easyoffice
+          POSTGRES_PASSWORD: easyoffice
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U easyoffice"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DB_HOST: localhost
     steps:
       - name: Descargar el código
         uses: actions/checkout@v4

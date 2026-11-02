@@ -35,7 +35,7 @@ export async function pedir(path, { accessToken, method = 'GET', body } = {}) {
   return data
 }
 
-// estado: '' (todas) | 'pendiente' | 'convertido'
+// estado: '' (todas) | 'pendiente' | 'convertida' | 'descartada'
 export function listarSolicitudes({ accessToken, estado, limit, offset }) {
   const params = new URLSearchParams()
   if (estado) params.set('estado', estado)
@@ -59,6 +59,16 @@ export function convertirSolicitud({ accessToken, idSolicitud, idEmpresa, idSucu
     accessToken,
     method: 'POST',
     body: Object.keys(body).length > 0 ? body : undefined
+  })
+}
+
+// Cierra la solicitud sin convertirla en trámite. Exige un motivo; no se puede
+// descartar una ya convertida ni una ya descartada (el backend responde 400).
+export function descartarSolicitud({ accessToken, idSolicitud, motivo }) {
+  return pedir(`/api/solicitudes-contacto/${idSolicitud}/descartar`, {
+    accessToken,
+    method: 'POST',
+    body: { motivo }
   })
 }
 

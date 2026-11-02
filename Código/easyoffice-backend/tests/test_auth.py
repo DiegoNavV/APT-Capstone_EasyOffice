@@ -77,7 +77,7 @@ class TestLogin:
         assert usuario.intentos_fallidos == 0
 
     def test_hash_invalido_en_bd_no_da_500(self, client, login, db_session, seed):
-        # Como el usuario de prueba de db/init/02_seed.sql, cuyo hash es ficticio.
+        # Como el usuario de prueba de db/init/05_seed_dev.sql, cuyo hash es ficticio.
         usuario = db_session.get(models.Usuario, seed["usuario"].id_usuario)
         usuario.password_hash = "CAMBIAR_CUANDO_EXISTA_AUTH"
         db_session.commit()
@@ -175,6 +175,10 @@ class TestRefreshYLogout:
     def test_refresh_token_expirado_401(self, client, login, db_session):
         cookie = login().cookies.get("refresh_token")
         for registro in db_session.query(models.RefreshToken).all():
+            # expira_en debe quedar DESPUÉS de creado_en (ck_refresh_token_expira_despues):
+            # se mueven los dos al pasado, no solo expira_en, para que siga expirado mirado
+            # desde ahora pero sin violar el CHECK.
+            registro.creado_en = ahora_utc() - timedelta(days=1)
             registro.expira_en = ahora_utc() - timedelta(seconds=1)
         db_session.commit()
         assert _refresh_con_cookie(client, cookie).status_code == 401

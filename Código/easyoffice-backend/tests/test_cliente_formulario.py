@@ -7,6 +7,7 @@ import pytest
 
 from app import models
 from app.seguridad import limiter
+from tests.conftest import crear_empresa
 
 CONTRATO = "Contrato de servicio"
 AUTORIZACION = "Autorización de domicilio tributario"
@@ -48,13 +49,9 @@ def tramite_de(client, crear_solicitud, convertir, seed, db_session):
 
 @pytest.fixture()
 def empresa_completa(db_session):
-    empresa = models.Empresa(
-        rut_empresa="76123456-0", razon_social="Comercial Prueba SpA", datos=dict(DATOS_EMPRESA)
+    return crear_empresa(
+        db_session, rut_empresa="76123456-0", razon_social="Comercial Prueba SpA", **DATOS_EMPRESA
     )
-    db_session.add(empresa)
-    db_session.commit()
-    db_session.refresh(empresa)
-    return empresa
 
 
 def _formulario(client, codigo):
@@ -151,17 +148,17 @@ class TestConEmpresaVinculada:
             assert sensible not in texto
 
     def test_solo_se_marcan_registrados_los_campos_que_existen(self, client, tramite_de, db_session):
-        parcial = models.Empresa(
-            rut_empresa="76123456-0", razon_social="Parcial SpA", datos={"email": "a@b.cl"}
+        # Toda empresa tiene representante (nombre y RUT); el resto puede faltar.
+        parcial = crear_empresa(
+            db_session, rut_empresa="76123456-0", razon_social="Parcial SpA",
+            representante_legal="Ana", rut_representante="11111111-1", email="a@b.cl",
         )
-        db_session.add(parcial)
-        db_session.commit()
         tramite = tramite_de(empresa=parcial)
 
         campos = _por_clave(_formulario(client, tramite.codigo_seguimiento).json())
 
         registrados = {k for k, c in campos.items() if c["registrado"]}
-        assert registrados == {"razon_social", "rut_empresa", "email"}
+        assert registrados == {"razon_social", "rut_empresa", "representante_legal", "rut_representante", "email"}
 
     def test_autorizacion_reutiliza_datos_del_contrato(self, client, tramite_de, empresa_completa):
         tramite = tramite_de(AUTORIZACION, empresa=empresa_completa)
@@ -176,7 +173,7 @@ class TestDespuesDelEnvio:
         db_session.add(models.DatosEmpresaTramite(
             id_tramite=tramite.id_tramite,
             solicitante_es_representante=True,
-            consentimiento_aceptado=True,
+            version_consentimiento="2026-10",
         ))
         db_session.commit()
 

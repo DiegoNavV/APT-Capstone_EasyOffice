@@ -6,6 +6,7 @@ from datetime import date, timedelta
 
 import pytest
 
+from app import models
 from app.campos_servicio import (
     CAMPOS_AUTORIZACION,
     CAMPOS_CONTRATO,
@@ -54,8 +55,11 @@ class TestDefinicion:
         assert all(columnas)
         assert len(set(columnas)) == 12
 
-    def test_solo_razon_social_y_rut_van_en_columna_propia(self):
-        assert [c.clave for c in CAMPOS_CONTRATO if c.en_columna] == ["razon_social", "rut_empresa"]
+    def test_los_12_campos_son_atributos_de_la_empresa(self):
+        # Ninguno va al JSON `datos`: en el esquema v4 todos tienen columna propia
+        # (los del representante, en la tabla representante_legal).
+        assert all(c.en_columna for c in CAMPOS_CONTRATO)
+        assert all(hasattr(models.Empresa, c.clave) for c in CAMPOS_CONTRATO)
 
     def test_la_autorizacion_tiene_4_campos(self):
         assert [c.clave for c in CAMPOS_AUTORIZACION] == [
@@ -104,8 +108,8 @@ class TestAutorizacion:
 
     def test_separa_columnas_y_json(self):
         columnas, datos = separar_para_guardar(CAMPOS_AUTORIZACION, validar_campos(CAMPOS_AUTORIZACION, self.DATOS))
-        assert set(columnas) == {"razon_social", "rut_empresa"}
-        assert set(datos) == {"representante_legal", "rut_representante"}
+        assert set(columnas) == {"razon_social", "rut_empresa", "representante_legal", "rut_representante"}
+        assert datos == {}
 
     def test_se_puede_validar_solo_lo_que_falta(self):
         # Una empresa que ya hizo la autorización completa solo los 8 campos
@@ -129,9 +133,8 @@ class TestValidacionCorrecta:
 
     def test_separa_columnas_y_json(self):
         columnas, datos = separar_para_guardar(CAMPOS_CONTRATO, validar())
-        assert set(columnas) == {"razon_social", "rut_empresa"}
-        assert len(datos) == 10
-        assert "razon_social" not in datos
+        assert len(columnas) == 12
+        assert datos == {}
 
 
 class TestRut:

@@ -17,6 +17,7 @@ NUNCA uses datos reales de personas aquí.
 import os
 import shutil
 import sys
+from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ["DOCUMENTOS_DIR"] = "/tmp/prueba_documentos"
@@ -24,9 +25,13 @@ if not os.environ.get("BANCO_TEXTO_EASY_OFFICE", "").strip():
     os.environ["BANCO_TEXTO_EASY_OFFICE"] = "00000000 de BANCO DE PRUEBA, a nombre de su titular EMPRESA DE PRUEBA (TEXTO DE PRUEBA)"
 from app import documentos, models  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
+from app.seguridad import ahora_utc  # noqa: E402
 
-FOLIO = "PRUEBA-01-2026"
-RUT_FICTICIO = "99999999-9"
+# Valores ficticios que identifican lo que crea esta prueba (y que _limpiar borra después).
+FOLIO = "ZZZZZ-99-2099"            # cumple el formato de folio de la base (2 a 5 letras)
+RUT_FICTICIO = "99999999-9"        # empresa
+RUN_REPRESENTANTE = "99999998-8"
+RUN_CLIENTE = "99999997-7"
 
 
 def main() -> int:
@@ -54,23 +59,31 @@ def main() -> int:
             )
             db.add(sucursal)
             creados["sucursal"] = sucursal
-        cliente = models.Cliente(nombre="Cliente de Prueba")
-        empresa = models.Empresa(
-            rut_empresa=RUT_FICTICIO, razon_social="Empresa de Prueba SpA",
-            datos={
-                "giro_principal": "Servicios de prueba", "representante_legal": "Persona de Prueba Ficticia",
-                "rut_representante": "11111111-1", "domicilio_representante": "Avenida Falsa 742",
-                "comuna_representante": "Santiago", "region_representante": "Metropolitana",
-                "email": "prueba@ejemplo.cl", "celular": "912345678",
-                "fecha_escritura": "2026-01-10", "notaria": "Notaría de Prueba",
-            },
+        responsable = db.query(models.Usuario).filter(models.Usuario.activo.is_(True)).first()
+        if responsable is None:
+            print("No hay ningún usuario activo para dejar como responsable. Crea uno con scripts/crear_user.py.")
+            return 1
+        cliente = models.Cliente(nombre="Cliente de Prueba", rut=RUN_CLIENTE, email="prueba@ejemplo.cl")
+        solicitud = models.SolicitudContacto(
+            nombre="Cliente de Prueba", rut=RUN_CLIENTE, email="prueba@ejemplo.cl",
+            id_servicio=servicio.id_servicio, estado="convertida", fecha_cierre=ahora_utc(),
         )
-        db.add_all([cliente, empresa])
+        representante = models.RepresentanteLegal(
+            rut=RUN_REPRESENTANTE, nombre="Persona de Prueba Ficticia",
+            domicilio="Avenida Falsa 742", comuna="Santiago", region="Metropolitana",
+        )
+        empresa = models.Empresa(
+            rut_empresa=RUT_FICTICIO, razon_social="Empresa de Prueba SpA", representante=representante,
+            giro_principal="Servicios de prueba", email="prueba@ejemplo.cl", celular="912345678",
+            fecha_escritura=date(2026, 1, 10), notaria="Notaría de Prueba", datos={},
+        )
+        db.add_all([cliente, solicitud, empresa])
         db.commit()
         creados.update(cliente=cliente, empresa=empresa)
 
         tramite = models.Tramite(
             id_cliente=cliente.id_cliente, id_servicio=servicio.id_servicio, id_empresa=empresa.id_empresa,
+            id_usuario_responsable=responsable.id_usuario, id_solicitud_origen=solicitud.id_solicitud,
             id_sucursal=sucursal.id_sucursal, folio=FOLIO, codigo_seguimiento="PRUEBA99",
             condiciones={
                 "servicios": [
@@ -102,16 +115,21 @@ def main() -> int:
 
 
 def _limpiar(db) -> None:
-    """Borra todo lo que crea esta prueba (identificado por el folio y el RUT ficticios)."""
+    """Borra todo lo que crea esta prueba (identificado por el folio y los RUT ficticios). El trámite de
+    prueba no tiene historial, así que no choca con el trigger que impide borrar historial_estado."""
     tramite = db.query(models.Tramite).filter(models.Tramite.folio == FOLIO).first()
     if tramite:
-        db.query(models.HistorialEstado).filter_by(id_tramite=tramite.id_tramite).delete()
         db.delete(tramite)
         db.commit()
+    for s in db.query(models.SolicitudContacto).filter(models.SolicitudContacto.rut == RUN_CLIENTE).all():
+        db.delete(s)
     empresa = db.query(models.Empresa).filter(models.Empresa.rut_empresa == RUT_FICTICIO).first()
     if empresa:
         db.delete(empresa)
-    for c in db.query(models.Cliente).filter(models.Cliente.nombre == "Cliente de Prueba").all():
+        db.flush()
+    for r in db.query(models.RepresentanteLegal).filter(models.RepresentanteLegal.rut == RUN_REPRESENTANTE).all():
+        db.delete(r)
+    for c in db.query(models.Cliente).filter(models.Cliente.rut == RUN_CLIENTE).all():
         db.delete(c)
     for s in db.query(models.Sucursal).filter(models.Sucursal.iniciales == "ZZ", models.Sucursal.nombre == "Sucursal de prueba").all():
         db.delete(s)

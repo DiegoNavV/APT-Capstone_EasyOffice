@@ -20,7 +20,7 @@ def _salida(p: models.PlantillaDocumento) -> schemas.PlantillaOut:
         id_servicio=p.id_servicio,
         nombre_servicio=p.servicio.nombre,
         nombre=p.nombre,
-        version=p.version,
+        version=str(p.version),
         activa=p.activa,
         fecha_creacion=p.fecha_creacion,
         nombre_original=p.nombre_original,

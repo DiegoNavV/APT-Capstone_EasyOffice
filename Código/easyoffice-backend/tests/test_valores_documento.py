@@ -9,6 +9,7 @@ from app.rellenar_docx import FaltanDatos, rellenar_docx
 from app.valores_documento import (
     fecha_larga, marca_del_tramite, precio_con_miles, rut_con_puntos, texto_bancario, valores_para_documento,
 )
+from tests.conftest import crear_empresa, crear_tramite
 from tests.test_marcas_documento import hacer_docx, parrafo_texto
 from tests.test_rellenar_docx import textos_de
 
@@ -27,22 +28,20 @@ def tramite(db_session, seed):
         iniciales="LF", nombre="La Florida", direccion="Vicuña Mackenna Poniente #7255, Oficina 707",
         comuna="La Florida", region="Metropolitana", rol_propiedad="271-147",
     )
-    cliente = models.Cliente(nombre="Oscar Contreras")
-    empresa = models.Empresa(
-        rut_empresa="78526673-0", razon_social="Altus and Company Co. SpA",
-        datos={
-            "giro_principal": "Comercializadora", "representante_legal": "Oscar Contreras Benavides",
-            "rut_representante": "14144266-K", "domicilio_representante": "Panamericana Norte 213",
-            "comuna_representante": "Til Til", "region_representante": "Metropolitana",
-            "email": "contacto@altus.cl", "celular": "932365169",
-            "fecha_escritura": "2026-10-02", "notaria": "www.tuempresaenundia.cl",
-        },
+    empresa = crear_empresa(
+        db_session, rut_empresa="78526673-0", razon_social="Altus and Company Co. SpA",
+        giro_principal="Comercializadora", representante_legal="Oscar Contreras Benavides",
+        rut_representante="14144266-K", domicilio_representante="Panamericana Norte 213",
+        comuna_representante="Til Til", region_representante="Metropolitana",
+        email="contacto@altus.cl", celular="932365169",
+        fecha_escritura="2026-10-02", notaria="www.tuempresaenundia.cl",
     )
-    db_session.add_all([sucursal, cliente, empresa])
+    db_session.add(sucursal)
     db_session.commit()
-    t = models.Tramite(
-        id_cliente=cliente.id_cliente, id_servicio=seed["servicio"].id_servicio, id_empresa=empresa.id_empresa,
-        id_sucursal=sucursal.id_sucursal, folio="LF-01-2026", codigo_seguimiento="ABCD2345",
+    return crear_tramite(
+        db_session, seed["servicio"], seed["usuario"], nombre_cliente="Oscar Contreras",
+        id_empresa=empresa.id_empresa, id_sucursal=sucursal.id_sucursal, folio="LF-01-2026",
+        codigo_seguimiento="ABCD2345",
         condiciones={
             "servicios": [
                 {"id_servicio_ofrecido": 1, "nombre": "Creación de empresas", "descripcion": "*Creación", "precio": 59990, "ciclo_pago": "ANUAL"},
@@ -51,10 +50,6 @@ def tramite(db_session, seed):
             "duracion_meses": 12, "fecha_inicio": "2026-10-02", "fecha_vencimiento": "2027-10-01",
         },
     )
-    db_session.add(t)
-    db_session.commit()
-    db_session.refresh(t)
-    return t
 
 
 # ---------- formatos ----------
@@ -124,7 +119,10 @@ def test_sin_condiciones_las_marcas_de_condiciones_quedan_sin_dato(tramite):
 
 
 def test_empresa_con_datos_incompletos(tramite):
-    tramite.empresa.datos = {"representante_legal": "Ana", "rut_representante": "11111111-1"}
+    empresa = tramite.empresa
+    empresa.giro_principal = empresa.email = None
+    empresa.representante.nombre = "Ana"
+    empresa.representante.domicilio = None
     v = valores_para_documento(tramite)
     assert v["REPRESENTANTE_LEGAL"] == "ANA"
     assert v["GIRO_PRINCIPAL"] is None and v["MAIL"] is None and v["DOMIC_REP_LEGAL"] is None

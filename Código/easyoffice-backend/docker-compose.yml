@@ -43,6 +43,9 @@ services:
       - ./app:/app/app
       - ./tests:/app/tests
       - ./scripts:/app/scripts
+      # Los tests lo necesitan para levantar la base de pruebas con el esquema real
+      # (db/init/), no una reconstrucción aparte (ver tests/conftest.py).
+      - ./db:/app/db
       - plantillas_data:/app/plantillas
       - documentos_data:/app/documentos
     depends_on:
@@ -57,6 +60,11 @@ services:
       context: ../easyoffice-frontend
       args:
         VITE_API_URL: http://localhost:8000
+        # Alternativa para exponer todo detrás de un solo túnel ngrok sin
+        # romper la cookie httpOnly del refresh token (samesite=lax no viaja
+        # cross-site): usar VITE_API_URL: "" (vacío = mismo origen que el
+        # frontend) y descomentar el bloque location /api/ en nginx.conf.
+        # VITE_API_URL: ""
     ports:
       - "8080:80"
     depends_on:

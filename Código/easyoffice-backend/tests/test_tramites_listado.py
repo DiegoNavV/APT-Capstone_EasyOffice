@@ -5,6 +5,7 @@ login: devuelven datos de clientes.
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import text
 
 from app import models
 from app.seguridad import crear_access_token
@@ -23,9 +24,20 @@ def auth(seed):
 @pytest.fixture()
 def hacer_tramite(crear_solicitud, convertir, db_session):
     """Crea solicitud -> convierte -> devuelve el JSON del trámite. La conversión
-    deja como responsable al usuario de la sesión; con agente=False se le quita
-    (puede ocurrir más adelante, p. ej. al reasignar) para probar "Sin asignar"."""
+    deja como responsable al usuario de la sesión; con agente=False se reasigna a
+    otro agente (todo trámite tiene responsable), para probar el filtro por agente."""
     contador = {"n": 0}
+    otro = {}
+
+    def _otro_agente():
+        if "usuario" not in otro:
+            otro["usuario"] = models.Usuario(
+                nombre="Otro Agente", email="otro.agente@easyoffice.cl", password_hash="x",
+                id_rol=db_session.query(models.Rol).filter_by(nombre="agente").one().id_rol,
+            )
+            db_session.add(otro["usuario"])
+            db_session.commit()
+        return otro["usuario"]
 
     def _hacer(rut=None, nombre="Juan Pérez", agente=False, **overrides):
         contador["n"] += 1
@@ -35,7 +47,8 @@ def hacer_tramite(crear_solicitud, convertir, db_session):
         resp = convertir(sol["id_solicitud"])
         assert resp.status_code == 200, resp.text
         if not agente:
-            db_session.get(models.Tramite, resp.json()["id_tramite"]).id_usuario_responsable = None
+            tramite = db_session.get(models.Tramite, resp.json()["id_tramite"])
+            tramite.id_usuario_responsable = _otro_agente().id_usuario
             db_session.commit()
         return resp.json()
 
@@ -88,16 +101,15 @@ class TestListado:
             "nombre": "Ana Soto", "rut": "12345678-9", "datos_pendientes": True}
         assert fila["id_servicio"] == seed["servicio"].id_servicio
         assert fila["nombre_servicio"] == "Constitución de Sociedad"
-        assert fila["estado_actual"] == "generado"
+        assert fila["estado_actual"] == "esperando_datos"
         assert fila["id_usuario_responsable"] == seed["usuario"].id_usuario
         assert fila["nombre_agente"] == "Agente Prueba"
         assert fila["fecha_actualizacion"]
 
-    def test_sin_agente_nombre_null(self, client, auth, hacer_tramite):
+    def test_otro_agente_muestra_su_nombre(self, client, auth, hacer_tramite):
         hacer_tramite()
         fila = client.get(URL, headers=auth).json()["items"][0]
-        assert fila["id_usuario_responsable"] is None
-        assert fila["nombre_agente"] is None
+        assert fila["nombre_agente"] == "Otro Agente"
 
     def test_no_expone_email_telefono_ni_mensaje(self, client, auth, hacer_tramite):
         hacer_tramite()
@@ -112,6 +124,11 @@ class TestListado:
         t2 = hacer_tramite()
         t3 = hacer_tramite()
         base = datetime(2026, 1, 1, 12, 0, 0)
+        # trg_tramite_fecha_actualizacion (02_funciones.sql) pisa fecha_actualizacion con
+        # now() en TODO UPDATE -- correcto en producción, pero acá se necesita fijar
+        # fechas a mano para probar el orden; se desactiva solo para este test (la base
+        # se recrea entera para el próximo, así que no hace falta reactivarlo después).
+        db_session.execute(text("ALTER TABLE tramite DISABLE TRIGGER trg_tramite_fecha_actualizacion"))
         for t, minutos in ((t1, 30), (t2, 0), (t3, 10)):
             fila = db_session.get(models.Tramite, t["id_tramite"])
             fila.fecha_actualizacion = base + timedelta(minutes=minutos)
@@ -260,7 +277,7 @@ class TestResumen:
             "pendientes_datos": 0, "en_proceso": 0, "firmados_24h": 0, "entregados": 0}
 
     def test_agrupa_los_estados(self, client, auth, hacer_tramite, db_session):
-        estados = ["generado", "generado", "procesando_firma", "en_revision",
+        estados = ["esperando_datos", "esperando_datos", "procesando_firma", "en_revision",
                    "firmado", "entregado", "entregado"]
         for e in estados:
             t = hacer_tramite()
@@ -275,12 +292,12 @@ class TestResumen:
         reciente = hacer_tramite()
         antiguo = hacer_tramite()
         db_session.add_all([
-            models.HistorialEstado(id_tramite=reciente["id_tramite"], estado="firmado",
+            models.HistorialEstado(id_tramite=reciente["id_tramite"], estado="firmado", origen="sistema",
                                    fecha=ahora - timedelta(hours=2)),
             # Dos registros del mismo trámite cuentan una sola vez.
-            models.HistorialEstado(id_tramite=reciente["id_tramite"], estado="firmado",
+            models.HistorialEstado(id_tramite=reciente["id_tramite"], estado="firmado", origen="sistema",
                                    fecha=ahora - timedelta(hours=1)),
-            models.HistorialEstado(id_tramite=antiguo["id_tramite"], estado="firmado",
+            models.HistorialEstado(id_tramite=antiguo["id_tramite"], estado="firmado", origen="sistema",
                                    fecha=ahora - timedelta(hours=30)),
         ])
         db_session.commit()
