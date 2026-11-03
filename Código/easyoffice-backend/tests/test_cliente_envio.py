@@ -426,3 +426,64 @@ class TestCodigoYLimite:
         respuestas = [_enviar(client, "ZZZZZZZZ", _cuerpo(CAMPOS_CONTRATO)).status_code for _ in range(11)]
         assert respuestas[:10] == [404] * 10
         assert respuestas[10] == 429
+
+
+# ---------- Envio a la API de firma ----------
+
+@pytest.fixture(autouse=True)
+def envio_a_firma_falso(monkeypatch):
+    """Por defecto el envio a firma se reemplaza: ninguna prueba de este archivo habla con la API real.
+    Devuelve la lista de llamadas (tramite, ip, navegador)."""
+    llamadas = []
+
+    def falso(db, tramite, ip, user_agent):
+        llamadas.append((tramite.id_tramite, ip, user_agent))
+        return True
+
+    monkeypatch.setattr("app.envio_firma.enviar_a_firma", falso)
+    return llamadas
+
+
+class TestEnvioAFirma:
+    def test_al_enviar_los_datos_se_manda_a_firma(self, client, tramite_de, envio_a_firma_falso):
+        tramite = tramite_de()
+        resp = _enviar(client, tramite.codigo_seguimiento, _cuerpo(CAMPOS_CONTRATO))
+
+        assert resp.status_code == 200
+        assert [id_tramite for id_tramite, _, _ in envio_a_firma_falso] == [tramite.id_tramite]
+
+    def test_pasa_la_ip_y_el_navegador_del_cliente(self, client, tramite_de, envio_a_firma_falso):
+        tramite = tramite_de()
+        resp = client.post(
+            f"/api/tramites/codigo/{tramite.codigo_seguimiento}/datos",
+            json=_cuerpo(CAMPOS_CONTRATO),
+            headers={"User-Agent": "Mozilla/5.0 (prueba)"},
+        )
+
+        assert resp.status_code == 200
+        _, ip, navegador = envio_a_firma_falso[0]
+        assert ip and navegador == "Mozilla/5.0 (prueba)"
+
+    def test_servicio_con_revision_humana_no_se_manda_a_firma(self, client, tramite_de, envio_a_firma_falso):
+        tramite = tramite_de(requiere_revision=True)
+        resp = _enviar(client, tramite.codigo_seguimiento, _cuerpo(CAMPOS_CONTRATO))
+
+        assert resp.json()["estado_actual"] == "en_revision"
+        assert envio_a_firma_falso == []
+
+    def test_envio_rechazado_no_se_manda_a_firma(self, client, tramite_de, envio_a_firma_falso):
+        tramite = tramite_de()
+        resp = _enviar(client, tramite.codigo_seguimiento, _cuerpo(CAMPOS_CONTRATO, acepta_no_editar=False))
+
+        assert resp.status_code == 422
+        assert envio_a_firma_falso == []
+
+    def test_si_la_firma_falla_el_cliente_igual_ve_su_envio_exitoso(self, client, tramite_de, db_session, monkeypatch):
+        monkeypatch.setattr("app.envio_firma.enviar_a_firma", lambda db, tramite, ip, ua: False)
+        tramite = tramite_de()
+
+        resp = _enviar(client, tramite.codigo_seguimiento, _cuerpo(CAMPOS_CONTRATO))
+
+        assert resp.status_code == 200
+        assert resp.json()["estado_actual"] == "procesando_firma"
+        assert db_session.query(models.DatosEmpresaTramite).count() == 1
