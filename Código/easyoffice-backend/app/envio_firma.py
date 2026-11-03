@@ -18,6 +18,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from app import documentos, firma_client, models
+from app.database import SessionLocal
 from app.documentos import DocumentoNoGenerable
 from app.firma_client import ErrorFirma
 
@@ -89,3 +90,19 @@ def enviar_a_firma(db: Session, tramite: models.Tramite, ip: str, user_agent: st
         db.rollback()
         log.exception("Tramite %s: error inesperado al enviar a firma.", id_tramite)
     return False
+
+def enviar_en_segundo_plano(id_tramite: int, ip: str, user_agent: str) -> None:
+    """Lo mismo que `enviar_a_firma`, pero pensado para correr DESPUES de responderle al cliente
+    (BackgroundTasks de FastAPI): abre su propia sesion, porque la de la peticion ya esta cerrada,
+    y vuelve a cargar el tramite por su id. Nunca lanza."""
+    db = SessionLocal()
+    try:
+        tramite = db.get(models.Tramite, id_tramite)
+        if tramite is None:
+            log.error("Tramite %s no encontrado al enviarlo a firma en segundo plano.", id_tramite)
+            return
+        enviar_a_firma(db, tramite, ip, user_agent)
+    except Exception:
+        log.exception("Tramite %s: error inesperado al enviar a firma en segundo plano.", id_tramite)
+    finally:
+        db.close()

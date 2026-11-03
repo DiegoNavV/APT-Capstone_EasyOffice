@@ -1,7 +1,7 @@
 import base64
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
@@ -103,6 +103,7 @@ def enviar_datos_cliente(
     request: Request,
     codigo: str,
     envio: schemas.EnvioDatosIn,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """Público — el cliente envía UNA sola vez los datos que faltan de su empresa.
@@ -131,8 +132,11 @@ def enviar_datos_cliente(
     # manda el documento a la API de firma. La IP y el navegador del cliente quedan como evidencia de su aceptación. No lanza: si algo 
     # falla, el trámite sigue en procesando_firma.
     if tramite.estado_actual == envio_firma.ESTADO_PROCESANDO_FIRMA:
-        envio_firma.enviar_a_firma(
-            db, tramite, get_remote_address(request), request.headers.get("user-agent", "")[:500]
+        background_tasks.add_task(
+            envio_firma.enviar_en_segundo_plano,
+            tramite.id_tramite,
+            get_remote_address(request),
+            request.headers.get("user-agent", "")[:500],
         )
 
     return schemas.SeguimientoOut(
