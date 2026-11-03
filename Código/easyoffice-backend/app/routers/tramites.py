@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
-from app import campos_servicio, crud, models, schemas, vista_previa
+from app import campos_servicio, crud, envio_firma, models, schemas, vista_previa
 from app.database import get_db
 from app.seguridad import get_usuario_actual, limiter
 
@@ -126,6 +126,14 @@ def enviar_datos_cliente(
         )
     except crud.EnvioDatosRechazado as e:
         raise HTTPException(status_code=409, detail=e.mensaje)
+
+    # Sus datos ya quedaron guardados. Si el trámite sigue su camino a la firma (los que piden revisión humana esperan al agente), se 
+    # manda el documento a la API de firma. La IP y el navegador del cliente quedan como evidencia de su aceptación. No lanza: si algo 
+    # falla, el trámite sigue en procesando_firma.
+    if tramite.estado_actual == envio_firma.ESTADO_PROCESANDO_FIRMA:
+        envio_firma.enviar_a_firma(
+            db, tramite, get_remote_address(request), request.headers.get("user-agent", "")[:500]
+        )
 
     return schemas.SeguimientoOut(
         codigo_seguimiento=tramite.codigo_seguimiento,
