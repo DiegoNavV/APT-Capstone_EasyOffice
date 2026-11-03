@@ -5,7 +5,7 @@ import Footer from '../components/Footer.jsx'
 import { validarCodigoSeguimiento } from '../utils/validaciones.js'
 import { guardarCodigo, leerCodigo } from '../utils/codigoSesion.js'
 
-// Estados posibles (catálogo estado_tramite): esperando_datos, procesando_firma, en_revision (solo caso B), firmado, entregado, cancelado.
+// Estados posibles (catálogo estado_tramite): esperando_datos, procesando_firma, en_revision (solo caso B), firmado, entregado, cancelado, rechazado.
 // "esperando_datos" es el estado inicial: el código ya existe y falta que el cliente complete sus datos.
 const ESTADOS_LABEL = {
   esperando_datos: 'Esperando tus datos',
@@ -13,7 +13,8 @@ const ESTADOS_LABEL = {
   en_revision: 'En revisión',
   firmado: 'Firmado',
   entregado: 'Entregado',
-  cancelado: 'Cancelado'
+  cancelado: 'Cancelado',
+  rechazado: 'Rechazado'
 }
 
 export default function SeguimientoTramite() {

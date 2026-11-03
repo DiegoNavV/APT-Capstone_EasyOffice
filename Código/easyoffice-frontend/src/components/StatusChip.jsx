@@ -15,7 +15,7 @@ const VARIANTES = {
 
 export default function StatusChip({ variant = 'esperando_datos', label }) {
   // Un estado que la vista no conoce se muestra en gris con su propio nombre.
-  const v = VARIANTES[variant] ?? { ...VARIANTES.generado, texto: variant }
+  const v = VARIANTES[variant] ?? { ...VARIANTES.borrador, texto: variant }
   return (
     <span className={`inline-flex items-center gap-1.5 pl-2.5 pr-3 py-1 rounded-full ${v.bg}`}>
       <span className={`size-1.5 rounded-full ${v.dot}`} />
