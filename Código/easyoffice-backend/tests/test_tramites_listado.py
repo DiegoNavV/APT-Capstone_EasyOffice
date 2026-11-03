@@ -322,3 +322,34 @@ class TestResumen:
         texto = str(client.get(URL_RESUMEN, headers=auth).json())
         for dato in ("Juan", "12345678", "juan@example.com"):
             assert dato not in texto
+
+
+class TestAvisoFirma:
+    """El listado avisa al agente cuando un trámite en firma no puede avanzar."""
+
+    def test_trámite_sin_correo_del_firmante_trae_el_aviso(self, client, auth, hacer_tramite, db_session):
+        t = hacer_tramite()
+        _set_estado(db_session, t["id_tramite"], "procesando_firma")
+
+        items = client.get(URL, headers=auth).json()["items"]
+
+        assert items[0]["aviso_firma"] == "Falta el correo del firmante."
+
+    def test_trámite_en_otro_estado_no_trae_aviso(self, client, auth, hacer_tramite):
+        hacer_tramite()
+
+        items = client.get(URL, headers=auth).json()["items"]
+
+        assert items[0]["estado_actual"] == "esperando_datos"
+        assert items[0]["aviso_firma"] is None
+
+    def test_trámite_ya_enviado_a_firma_y_reciente_no_trae_aviso(self, client, auth, hacer_tramite, db_session):
+        t = hacer_tramite()
+        _set_estado(db_session, t["id_tramite"], "procesando_firma")
+        tramite = db_session.get(models.Tramite, t["id_tramite"])
+        tramite.documento_firma_id = "11111111-2222-3333-4444-555555555555"
+        db_session.commit()
+
+        items = client.get(URL, headers=auth).json()["items"]
+
+        assert items[0]["aviso_firma"] is None

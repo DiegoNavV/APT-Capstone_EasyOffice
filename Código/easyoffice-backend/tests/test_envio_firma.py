@@ -3,6 +3,8 @@ Envio de un tramite a la API de firma: que guarde el id del documento, registre 
 no duplique nada al reintentar y nunca lance un error.
 La API de firma y la generacion del PDF se reemplazan por funciones falsas.
 """
+from datetime import timedelta
+
 import pytest
 
 from app import envio_firma, firma_client, models
@@ -213,3 +215,125 @@ def test_en_segundo_plano_error_inesperado_no_lanza(TestingSessionLocal, en_firm
     monkeypatch.setattr(envio_firma, "enviar_a_firma", revienta)
 
     envio_firma.enviar_en_segundo_plano(en_firma.id_tramite, IP, NAVEGADOR)
+
+# ---------- Correo del firmante ----------
+
+def _sin_correo_de_empresa(db_session, tramite, solicitante_es_representante=None):
+    """Quita el correo de la empresa y, si se indica, registra lo que respondio el cliente al enviar
+    sus datos ('¿eres el representante legal?')."""
+    tramite.empresa.email = None
+    if solicitante_es_representante is not None:
+        db_session.add(models.DatosEmpresaTramite(
+            id_tramite=tramite.id_tramite,
+            solicitante_es_representante=solicitante_es_representante,
+            version_consentimiento="v1",
+        ))
+    db_session.commit()
+
+
+def test_el_correo_de_la_empresa_tiene_prioridad(db_session, en_firma):
+    db_session.add(models.DatosEmpresaTramite(
+        id_tramite=en_firma.id_tramite, solicitante_es_representante=True, version_consentimiento="v1",
+    ))
+    db_session.commit()
+
+    assert envio_firma.correo_del_firmante(en_firma) == "contacto@altus.cl"
+
+
+def test_sin_correo_de_empresa_usa_el_del_cliente_si_es_el_representante(db_session, en_firma, falsa):
+    _sin_correo_de_empresa(db_session, en_firma, solicitante_es_representante=True)
+
+    assert envio_firma.correo_del_firmante(en_firma) == "cliente@prueba.cl"
+    assert enviar(db_session, en_firma) is True
+    assert falsa["crear"][0]["firmante"]["email"] == "cliente@prueba.cl"
+
+
+def test_sin_correo_de_empresa_y_cliente_no_representante_no_hay_correo(db_session, en_firma, falsa):
+    _sin_correo_de_empresa(db_session, en_firma, solicitante_es_representante=False)
+
+    assert envio_firma.correo_del_firmante(en_firma) is None
+    assert enviar(db_session, en_firma) is False
+    assert falsa["crear"] == [] and falsa["generar"] == 0
+
+
+def test_sin_correo_de_empresa_ni_registro_del_envio_no_hay_correo(db_session, en_firma):
+    _sin_correo_de_empresa(db_session, en_firma)
+
+    assert envio_firma.correo_del_firmante(en_firma) is None
+
+
+def test_representante_sin_correo_de_cliente_no_hay_correo(db_session, en_firma):
+    _sin_correo_de_empresa(db_session, en_firma, solicitante_es_representante=True)
+    # El esquema exige algun contacto (ck_cliente_algun_contacto): se deja solo el telefono.
+    en_firma.cliente.telefono = "912345678"
+    en_firma.cliente.email = None
+    db_session.commit()
+
+    assert envio_firma.correo_del_firmante(en_firma) is None
+
+
+# ---------- Aviso al agente ----------
+
+def _ahora(tramite, segundos):
+    """La hora actual simulada: `segundos` despues de la ultima actualizacion del tramite."""
+    return tramite.fecha_actualizacion + timedelta(seconds=segundos)
+
+
+def test_sin_correo_se_avisa_de_inmediato(db_session, en_firma):
+    _sin_correo_de_empresa(db_session, en_firma, solicitante_es_representante=False)
+    db_session.refresh(en_firma)
+
+    assert envio_firma.motivo_envio_pendiente(en_firma, _ahora(en_firma, 0)) == envio_firma.MOTIVO_SIN_CORREO
+
+
+def test_con_correo_y_reciente_no_se_avisa(db_session, en_firma):
+    db_session.refresh(en_firma)
+    assert envio_firma.motivo_envio_pendiente(en_firma, _ahora(en_firma, 10)) is None
+
+
+def test_con_correo_pasado_el_tiempo_se_avisa_que_no_se_completo(db_session, en_firma):
+    db_session.refresh(en_firma)
+    ahora = _ahora(en_firma, envio_firma.ESPERA_ENVIO_SEGUNDOS + 1)
+
+    assert envio_firma.motivo_envio_pendiente(en_firma, ahora) == envio_firma.MOTIVO_NO_COMPLETADO
+
+
+def test_justo_en_el_limite_todavia_no_se_avisa(db_session, en_firma):
+    db_session.refresh(en_firma)
+    ahora = _ahora(en_firma, envio_firma.ESPERA_ENVIO_SEGUNDOS)
+
+    assert envio_firma.motivo_envio_pendiente(en_firma, ahora) is None
+
+
+def test_ya_enviado_a_firma_y_reciente_no_se_avisa_aunque_falte_el_correo(db_session, en_firma):
+    # El documento ya salio: que ahora no se encuentre el correo ya no es el problema.
+    _sin_correo_de_empresa(db_session, en_firma, solicitante_es_representante=False)
+    en_firma.documento_firma_id = "11111111-2222-3333-4444-555555555555"
+    db_session.commit()
+    db_session.refresh(en_firma)
+
+    assert envio_firma.motivo_envio_pendiente(en_firma, _ahora(en_firma, 10)) is None
+
+
+def test_ya_enviado_a_firma_pero_sin_avanzar_se_avisa(db_session, en_firma):
+    en_firma.documento_firma_id = "11111111-2222-3333-4444-555555555555"
+    db_session.commit()
+    db_session.refresh(en_firma)
+    ahora = _ahora(en_firma, envio_firma.ESPERA_ENVIO_SEGUNDOS + 60)
+
+    assert envio_firma.motivo_envio_pendiente(en_firma, ahora) == envio_firma.MOTIVO_NO_COMPLETADO
+
+
+def test_un_tramite_que_no_esta_en_firma_nunca_avisa(db_session, tramite):  # noqa: F811
+    assert tramite.estado_actual == "esperando_datos"
+    assert envio_firma.motivo_envio_pendiente(tramite, _ahora(tramite, 99999)) is None
+
+
+def test_un_tramite_firmado_no_avisa(db_session, en_firma):
+    db_session.add(models.HistorialEstado(
+        id_tramite=en_firma.id_tramite, estado="firmado", origen="sistema", comentario="Firmado.",
+    ))
+    db_session.commit()
+    db_session.refresh(en_firma)
+
+    assert envio_firma.motivo_envio_pendiente(en_firma, _ahora(en_firma, 99999)) is None

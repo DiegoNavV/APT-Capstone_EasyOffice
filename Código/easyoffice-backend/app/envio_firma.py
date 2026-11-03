@@ -14,6 +14,7 @@ queda en `procesando_firma`. Se puede volver a llamar: si el documento ya se cre
 lo que faltaba.
 """
 import logging
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -27,18 +28,33 @@ log = logging.getLogger("easyoffice.envio_firma")
 ESTADO_PROCESANDO_FIRMA = "procesando_firma"
 
 
+def correo_del_firmante(tramite: models.Tramite) -> str | None:
+    """Correo al que se asocia la firma. Primero el de la empresa; si no tiene, el del cliente, pero solo
+    si dijo ser el representante legal al enviar sus datos (si no, ese correo seria de otra persona).
+    None si no hay ninguno: el tramite no se puede enviar a firma."""
+    empresa = tramite.empresa
+    if empresa is not None and empresa.email:
+        return empresa.email
+    envio = tramite.datos_empresa
+    cliente = tramite.cliente
+    if envio is not None and envio.solicitante_es_representante and cliente is not None and cliente.email:
+        return cliente.email
+    return None
+
+
 def _firmante(tramite: models.Tramite) -> dict | None:
     """Datos del firmante que pide la API, o None si falta alguno."""
     empresa = tramite.empresa
     representante = empresa.representante if empresa else None
     if empresa is None or representante is None:
         return None
-    if not (representante.nombre and representante.rut and empresa.email):
+    correo = correo_del_firmante(tramite)
+    if not (representante.nombre and representante.rut and correo):
         return None
     return {
         "name": representante.nombre,
         "rut": representante.rut,
-        "email": empresa.email,
+        "email": correo,
         "represents_name": empresa.razon_social,
         "represents_rut": empresa.rut_empresa,
     }
@@ -106,3 +122,30 @@ def enviar_en_segundo_plano(id_tramite: int, ip: str, user_agent: str) -> None:
         log.exception("Tramite %s: error inesperado al enviar a firma en segundo plano.", id_tramite)
     finally:
         db.close()
+
+
+# ---------- Aviso al agente ----------
+
+MOTIVO_SIN_CORREO = "Falta el correo del firmante."
+MOTIVO_NO_COMPLETADO = "El envío a firma no se completó."
+
+# Tiempo que se espera antes de dar por fallido un envío: el normal tarda unos segundos, y el aviso de que
+# quedo firmado llega poco despues.
+ESPERA_ENVIO_SEGUNDOS = 300
+
+
+def motivo_envio_pendiente(tramite: models.Tramite, ahora: datetime | None = None) -> str | None:
+    """Por que un tramite en `procesando_firma` no avanza, o None si no hay nada que avisar. El panel lo
+    muestra para que el agente sepa que debe intervenir (hoy el fallo solo queda en el log).
+
+      - sin correo del firmante: se avisa de inmediato, porque no se va a enviar nunca solo;
+      - cualquier otro caso: se avisa si pasaron mas de ESPERA_ENVIO_SEGUNDOS sin que el tramite avance
+        (la API de firma caida, un error al generar el PDF, el aviso que no llego...)."""
+    if tramite.estado_actual != ESTADO_PROCESANDO_FIRMA:
+        return None
+    if not tramite.documento_firma_id and _firmante(tramite) is None:
+        return MOTIVO_SIN_CORREO
+    ahora = ahora or datetime.now(timezone.utc).replace(tzinfo=None)
+    if tramite.fecha_actualizacion and (ahora - tramite.fecha_actualizacion).total_seconds() > ESPERA_ENVIO_SEGUNDOS:
+        return MOTIVO_NO_COMPLETADO
+    return None

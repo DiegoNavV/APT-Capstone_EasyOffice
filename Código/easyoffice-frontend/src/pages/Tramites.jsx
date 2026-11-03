@@ -379,6 +379,11 @@ export default function Tramites() {
                     {t.cliente.rut ? `RUT ${t.cliente.rut}` : 'Sin RUT'} · <span className="font-mono tracking-wider">{t.codigo_seguimiento}</span>
                     {t.cliente.datos_pendientes && ' · Datos de empresa pendientes'}
                   </p>
+                  {t.aviso_firma && (
+                    <p className="text-xs font-medium text-status-rejected-fg mt-0.5" title="Un agente debe intervenir: el envío a firma no avanza.">
+                      ⚠ {t.aviso_firma}
+                    </p>
+                  )}
                 </div>
                 <span className="w-[230px] text-[13px] text-ink-secondary">{t.nombre_servicio}</span>
                 <span className="w-[170px] text-[13px] text-ink-secondary">{t.nombre_agente || 'Sin asignar'}</span>
