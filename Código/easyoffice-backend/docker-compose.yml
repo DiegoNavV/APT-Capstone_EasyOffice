@@ -37,6 +37,17 @@ services:
       # el .env (que no se sube a Git), nunca aqui. Sin ellos no se genera el documento.
       BANCO_TEXTO_EASY_OFFICE: ${BANCO_TEXTO_EASY_OFFICE:-}
       BANCO_TEXTO_INOFFICE: ${BANCO_TEXTO_INOFFICE:-}
+      # Conexion con la API de firma (contrato: easyoffice-firma-api/CONTRATO_INTEGRACION.md).
+      # Los valores por defecto sirven solo para desarrollo y coinciden con los de su compose.
+      FIRMA_API_URL: ${FIRMA_API_URL:-http://firma-api:8000/api/v1}
+      FIRMA_API_KEY: ${FIRMA_API_KEY:-fk_test_dev-inseguro-cambiar}
+      FIRMA_WEBHOOK_SECRET: ${FIRMA_WEBHOOK_SECRET:-dev-inseguro-cambiar}
+      # Direccion a la que la API de firma avisa cuando un documento se firma, se rechaza o vence.
+      FIRMA_CALLBACK_URL: ${FIRMA_CALLBACK_URL:-http://backend:8000/api/webhooks/firma}
+    # La red easyoffice-net es la que comparte con la API de firma (ver el final del archivo).
+    networks:
+      - default
+      - easyoffice-net
     ports:
       - "8000:8000"
     volumes:
@@ -74,3 +85,11 @@ volumes:
   db_data:
   plantillas_data:
   documentos_data:
+
+networks:
+  default: {}
+  # Red compartida con la API de firma. Es externa en ambos compose, asi que
+  # ninguno depende del orden de arranque del otro. Se crea UNA sola vez con:
+  #   docker network create easyoffice-net
+  easyoffice-net:
+    external: true
