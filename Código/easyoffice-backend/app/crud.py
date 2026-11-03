@@ -8,7 +8,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError, InternalError
 from sqlalchemy.orm import Session, contains_eager, joinedload
 
-from app import campos_servicio, condiciones as reglas_condiciones, enmascarado, models, schemas
+from app import campos_servicio, condiciones as reglas_condiciones, enmascarado, envio_firma, models, schemas
 from app.utils import normalizar_rut
 
 ESTADOS_DOCUMENTO_DISPONIBLE = {"firmado", "entregado"}
@@ -690,6 +690,7 @@ def listar_tramites(
                 fecha_actualizacion=t.fecha_actualizacion,
                 tiene_documento=bool(t.ruta_documento_generado),
                 folio=t.folio,
+                aviso_firma=envio_firma.motivo_envio_pendiente(t),
             )
             for t in tramites
         ],
