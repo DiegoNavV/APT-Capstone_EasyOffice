@@ -436,11 +436,10 @@ def envio_a_firma_falso(monkeypatch):
     Devuelve la lista de llamadas (tramite, ip, navegador)."""
     llamadas = []
 
-    def falso(db, tramite, ip, user_agent):
-        llamadas.append((tramite.id_tramite, ip, user_agent))
-        return True
+    def falso(id_tramite, ip, user_agent):
+        llamadas.append((id_tramite, ip, user_agent))
 
-    monkeypatch.setattr("app.envio_firma.enviar_a_firma", falso)
+    monkeypatch.setattr("app.envio_firma.enviar_en_segundo_plano", falso)
     return llamadas
 
 
@@ -479,7 +478,7 @@ class TestEnvioAFirma:
         assert envio_a_firma_falso == []
 
     def test_si_la_firma_falla_el_cliente_igual_ve_su_envio_exitoso(self, client, tramite_de, db_session, monkeypatch):
-        monkeypatch.setattr("app.envio_firma.enviar_a_firma", lambda db, tramite, ip, ua: False)
+        monkeypatch.setattr("app.envio_firma.enviar_en_segundo_plano", lambda id_tramite, ip, ua: None)
         tramite = tramite_de()
 
         resp = _enviar(client, tramite.codigo_seguimiento, _cuerpo(CAMPOS_CONTRATO))

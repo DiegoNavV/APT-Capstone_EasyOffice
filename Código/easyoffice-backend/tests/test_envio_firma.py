@@ -168,3 +168,48 @@ def test_sin_correo_de_la_empresa_no_envia(db_session, en_firma, falsa):
 
     assert enviar(db_session, en_firma) is False
     assert falsa["crear"] == [] and falsa["generar"] == 0
+
+# ---------- Envio en segundo plano ----------
+
+def test_en_segundo_plano_abre_su_propia_sesion_y_envia(db_session, TestingSessionLocal, en_firma, falsa, monkeypatch):
+    monkeypatch.setattr(envio_firma, "SessionLocal", TestingSessionLocal)
+
+    envio_firma.enviar_en_segundo_plano(en_firma.id_tramite, IP, NAVEGADOR)
+
+    assert len(falsa["crear"]) == 1
+    assert falsa["aceptar"] == [("11111111-2222-3333-4444-555555555555", "LF-01-2026", IP, NAVEGADOR)]
+    db_session.expire_all()
+    assert db_session.get(models.Tramite, en_firma.id_tramite).documento_firma_id == "11111111-2222-3333-4444-555555555555"
+
+
+def test_en_segundo_plano_cierra_su_sesion(TestingSessionLocal, en_firma, falsa, monkeypatch):
+    sesiones = []
+
+    def fabrica():
+        sesion = TestingSessionLocal()
+        cerrar = sesion.close
+        sesion.close = lambda: (sesiones.append("cerrada"), cerrar())
+        return sesion
+
+    monkeypatch.setattr(envio_firma, "SessionLocal", fabrica)
+    envio_firma.enviar_en_segundo_plano(en_firma.id_tramite, IP, NAVEGADOR)
+
+    assert sesiones == ["cerrada"]
+
+
+def test_en_segundo_plano_con_tramite_inexistente_no_lanza(TestingSessionLocal, falsa, monkeypatch):
+    monkeypatch.setattr(envio_firma, "SessionLocal", TestingSessionLocal)
+
+    envio_firma.enviar_en_segundo_plano(9999, IP, NAVEGADOR)
+
+    assert falsa["crear"] == [] and falsa["aceptar"] == []
+
+
+def test_en_segundo_plano_error_inesperado_no_lanza(TestingSessionLocal, en_firma, falsa, monkeypatch):
+    def revienta(db, tramite, ip, user_agent):
+        raise RuntimeError("algo raro")
+
+    monkeypatch.setattr(envio_firma, "SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(envio_firma, "enviar_a_firma", revienta)
+
+    envio_firma.enviar_en_segundo_plano(en_firma.id_tramite, IP, NAVEGADOR)
