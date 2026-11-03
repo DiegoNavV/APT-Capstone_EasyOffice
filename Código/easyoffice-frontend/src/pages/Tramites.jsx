@@ -19,7 +19,8 @@ const ESTADOS = [
   { valor: 'procesando_firma', texto: 'Procesando firma' },
   { valor: 'en_revision', texto: 'En revisión' },
   { valor: 'firmado', texto: 'Firmado' },
-  { valor: 'entregado', texto: 'Entregado' }
+  { valor: 'entregado', texto: 'Entregado' },
+  { valor: 'rechazado', texto: 'Rechazado' }
 ]
 
 // Con el documento ya firmado o entregado no se vuelve a generar (el servidor también lo impide).
