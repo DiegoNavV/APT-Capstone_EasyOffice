@@ -9,6 +9,7 @@ import {
   subirPlantilla
 } from '../lib/plantillasApi.js'
 import PaginaPanel from '../components/PaginaPanel.jsx'
+import { SkeletonTarjeta } from '../components/Skeleton.jsx'
 
 // Gestión de plantillas de documentos (contrato, autorización...). Cada archivo que se sube es una versión nueva del servicio: 
 // las anteriores se conservan y solo una está activa. El permiso lo decide el backend (`puede_gestionar`); quien no lo tiene ve solo un aviso.
@@ -276,7 +277,12 @@ export default function Plantillas() {
       </div>
     )
   } else if (cargando && !config) {
-    contenido = <p className="text-sm text-ink-secondary text-center py-10">Cargando plantillas…</p>
+    contenido = (
+      <div className="max-w-4xl space-y-5">
+        <SkeletonTarjeta />
+        <SkeletonTarjeta />
+      </div>
+    )
   } else if (config && !config.puede_gestionar) {
     contenido = (
       <div className="max-w-xl mx-auto text-center py-16">

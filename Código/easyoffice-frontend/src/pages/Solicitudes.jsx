@@ -6,6 +6,7 @@ import { useNovedadesSolicitudes } from '../lib/useNovedadesSolicitudes.js'
 import PaginaPanel from '../components/PaginaPanel.jsx'
 import CondicionesContrato from '../components/CondicionesContrato.jsx'
 import SelectorEmpresa, { textoEmpresa } from '../components/SelectorEmpresa.jsx'
+import { SkeletonTarjeta } from '../components/Skeleton.jsx'
 
 // Solicitudes que llegan desde el formulario "Contrata aquí" del sitio público.
 // El agente/admin confirma el pago manual y la convierte en trámite: ahí se genera el código de 8 caracteres que luego le entrega al cliente.
@@ -516,7 +517,11 @@ export default function Solicitudes() {
             </button>
           </div>
         ) : cargando && items.length === 0 ? (
-          <p className="text-sm text-ink-secondary text-center py-10">Cargando solicitudes…</p>
+          <div className="space-y-4">
+            <SkeletonTarjeta />
+            <SkeletonTarjeta />
+            <SkeletonTarjeta />
+          </div>
         ) : items.length === 0 ? (
           <p className="text-sm text-ink-secondary text-center py-10">{mensajeVacio}</p>
         ) : (

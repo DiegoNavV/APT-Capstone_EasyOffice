@@ -4,6 +4,7 @@ import { ApiError } from '../lib/api.js'
 import { obtenerReporteTramites } from '../lib/tramitesApi.js'
 import PaginaPanel from '../components/PaginaPanel.jsx'
 import StatusChip from '../components/StatusChip.jsx'
+import { SkeletonTarjeta } from '../components/Skeleton.jsx'
 
 // Vista "Reportes" del panel (mockup Figma, pantalla "9 · Exportar reporte"), con los conteos agregados reales de
 // GET /api/tramites/reporte. Exclusiva de administradores -- confirmado con el cliente (ver
@@ -113,7 +114,18 @@ export default function Reportes() {
       </div>
     )
   } else if (cargando && !datos) {
-    contenido = <p className="text-sm text-ink-secondary text-center py-10">Cargando reportes…</p>
+    contenido = (
+      <div className="max-w-6xl space-y-5">
+        <div className="w-64">
+          <SkeletonTarjeta lineas={1} />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <SkeletonTarjeta />
+          <SkeletonTarjeta />
+          <SkeletonTarjeta />
+        </div>
+      </div>
+    )
   } else if (datos && !datos.puede_ver) {
     contenido = (
       <div className="max-w-xl mx-auto text-center py-16">
