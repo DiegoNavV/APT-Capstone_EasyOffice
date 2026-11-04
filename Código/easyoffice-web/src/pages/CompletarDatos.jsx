@@ -98,6 +98,16 @@ function formatearFecha(ms) {
   return `${dos(f.getDate())}-${dos(f.getMonth() + 1)}-${f.getFullYear()}`
 }
 
+// Rueda de carga. Toma el color del texto (currentColor); `className` fija su tamaño.
+function Spinner({ className = 'h-5 w-5' }) {
+  return (
+    <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+      <path d="M22 12a10 10 0 0 0-10-10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 // ---------- piezas de la página ----------
 
 function Pasos({ actual }) {
@@ -363,8 +373,23 @@ export default function CompletarDatos() {
           {fase === 'cargando' && (
             <>
               <EncabezadoPagina titulo="Completar mis datos" />
-              <div role="status" className={`mt-8 ${CLASES_TARJETA_CENTRADA}`}>
-                <p className="text-gray-600">Cargando tu formulario...</p>
+              <div role="status" aria-busy="true" className="mt-6">
+                <span className="sr-only">Cargando tu formulario...</span>
+                {/* Esqueleto con la forma del formulario mientras llegan los campos. */}
+                <div className={`animate-pulse ${CLASES_TARJETA}`}>
+                  <div className="h-5 w-52 rounded bg-gray-200" />
+                  <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    {[0, 1, 2, 3, 4, 5].map((i) => (
+                      <div key={i} className={i === 0 ? 'sm:col-span-2' : ''}>
+                        <div className="h-3 w-32 rounded bg-gray-200" />
+                        <div className="mt-2 h-11 rounded-md bg-gray-100" />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-8 flex justify-end border-t border-gray-200 pt-6">
+                    <div className="h-11 w-40 rounded-md bg-gray-200" />
+                  </div>
+                </div>
               </div>
             </>
           )}
@@ -584,7 +609,8 @@ export default function CompletarDatos() {
                           setFase('form')
                           subirAlInicio()
                         }}
-                        className={CLASES_ENLACE}
+                        disabled={enviando}
+                        className={`${CLASES_ENLACE} disabled:cursor-not-allowed disabled:opacity-50`}
                       >
                         Volver a editar
                       </button>
@@ -712,10 +738,16 @@ export default function CompletarDatos() {
                       type="button"
                       onClick={enviar}
                       disabled={!puedeEnviar}
-                      className={`min-h-[48px] w-full ${CLASES_BOTON}`}
+                      className={`min-h-[48px] w-full gap-2 ${CLASES_BOTON}`}
                     >
-                      {enviando ? 'Enviando...' : 'Enviar mis datos'}
+                      {enviando && <Spinner />}
+                      {enviando ? 'Enviando tus datos...' : 'Enviar mis datos'}
                     </button>
+                    {enviando && (
+                      <p role="status" className="mt-2 text-center text-sm text-gray-600">
+                        Estamos enviando tus datos. No cierres ni recargues esta página.
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -732,9 +764,29 @@ export default function CompletarDatos() {
                   </p>
 
                   {borrador.estado === 'cargando' && (
-                    <div role="status" aria-busy="true" className="mt-4">
-                      <div className={`${ALTO_VISOR} animate-pulse rounded-lg bg-gray-200`} />
-                      <p className="mt-3 text-sm text-gray-600">Preparando tu borrador... puede tardar unos segundos.</p>
+                    <div role="status" aria-busy="true" className={`relative mt-4 ${ALTO_VISOR}`}>
+                      {/* Hoja en blanco con líneas que imita el documento mientras se prepara. */}
+                      <div className="h-full animate-pulse overflow-hidden rounded-lg bg-gray-200 p-3 sm:p-6">
+                        <div className="mx-auto h-full max-w-[820px] space-y-3 rounded bg-white/70 p-6 sm:p-10">
+                          <div className="mx-auto h-4 w-1/2 rounded bg-gray-200" />
+                          <div className="h-3 rounded bg-gray-200" />
+                          <div className="h-3 rounded bg-gray-200" />
+                          <div className="h-3 w-5/6 rounded bg-gray-200" />
+                          <div className="h-3 rounded bg-gray-200" />
+                          <div className="h-3 w-2/3 rounded bg-gray-200" />
+                          <div className="h-3 rounded bg-gray-200" />
+                          <div className="h-3 rounded bg-gray-200" />
+                          <div className="h-3 w-4/5 rounded bg-gray-200" />
+                        </div>
+                      </div>
+                      {/* El aviso va arriba, dentro del recuadro, para que se vea sin tener que bajar. */}
+                      <div className="absolute inset-x-0 top-0 flex justify-center px-4 pt-12 sm:pt-20">
+                        <div className="flex flex-col items-center gap-2 rounded-xl bg-white px-8 py-6 text-center shadow-md">
+                          <Spinner className="h-9 w-9 text-green-700" />
+                          <p className="text-sm font-semibold text-ink">Preparando tu borrador...</p>
+                          <p className="text-xs text-gray-600">Puede tardar unos segundos. No cierres esta página.</p>
+                        </div>
+                      </div>
                     </div>
                   )}
 
