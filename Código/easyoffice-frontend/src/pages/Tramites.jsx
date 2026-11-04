@@ -4,6 +4,7 @@ import { ApiError } from '../lib/api.js'
 import { descargarDocumento, generarDocumento, listarTramites, obtenerResumenTramites } from '../lib/tramitesApi.js'
 import PaginaPanel from '../components/PaginaPanel.jsx'
 import StatusChip from '../components/StatusChip.jsx'
+import { SkeletonFilas, SkeletonTarjetas } from '../components/Skeleton.jsx'
 
 // Vista "panel principal" (mockup Figma, pantalla "2 · Listado de trámites"), conectada al backend: GET /api/tramites 
 // (lista, filtros, búsqueda y paginación en el servidor) y GET /api/tramites/resumen (KPIs y opciones de los filtros). 
@@ -78,6 +79,8 @@ export default function Tramites() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [resumen, setResumen] = useState(null) // { kpis, servicios, agentes }
+  // true si falló la carga del resumen: las cifras muestran "—" en vez de quedar cargando para siempre.
+  const [resumenFallo, setResumenFallo] = useState(false)
   // Se incrementa para volver a pedir todo ("Actualizar", "Reintentar").
   const [recarga, setRecarga] = useState(0)
   // Documento PDF: id del trámite en el que se está trabajando y el último aviso { tipo: 'ok' | 'error', texto }.
@@ -108,12 +111,15 @@ export default function Tramites() {
   useEffect(() => {
     if (!haySesion) return
     let cancelado = false
+    setResumenFallo(false)
     obtenerResumenTramites({ accessToken })
       .then((datos) => {
         if (!cancelado) setResumen(datos)
       })
       .catch((e) => {
-        if (!cancelado) manejarError(e)
+        if (cancelado) return
+        setResumenFallo(true)
+        manejarError(e)
       })
     return () => {
       cancelado = true
@@ -288,15 +294,19 @@ export default function Tramites() {
           </button>
         </div>
       )}
-      <div className="flex gap-4">
-        {KPIS.map((kpi) => (
-          <div key={kpi.clave} className="bg-surface border border-line rounded-[10px] flex-1 px-5 py-[18px]">
-            <p className="text-[13px] font-medium text-ink-secondary">{kpi.etiqueta}</p>
-            <p className="text-[26px] font-bold text-ink-primary leading-[32px]">{resumen ? resumen.kpis[kpi.clave] : '—'}</p>
-            <p className="text-xs text-ink-muted">{kpi.nota}</p>
-          </div>
-        ))}
-      </div>
+      {!resumen && !resumenFallo ? (
+        <SkeletonTarjetas cantidad={4} />
+      ) : (
+        <div className="flex gap-4">
+          {KPIS.map((kpi) => (
+            <div key={kpi.clave} className="bg-surface border border-line rounded-[10px] flex-1 px-5 py-[18px]">
+              <p className="text-[13px] font-medium text-ink-secondary">{kpi.etiqueta}</p>
+              <p className="text-[26px] font-bold text-ink-primary leading-[32px]">{resumen ? resumen.kpis[kpi.clave] : '—'}</p>
+              <p className="text-xs text-ink-muted">{kpi.nota}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="bg-surface border border-line rounded-[10px] mt-5 overflow-hidden">
         <div className="border-b border-line flex items-center gap-2.5 px-4 py-3.5">
@@ -357,7 +367,7 @@ export default function Tramites() {
             </button>
           </div>
         ) : cargando && items.length === 0 ? (
-          <p className="text-sm text-ink-secondary text-center py-10">Cargando trámites…</p>
+          <SkeletonFilas filas={POR_PAGINA} columnas={['flex-1', 'w-[230px]', 'w-[170px]', 'w-[150px]', 'w-[150px]', 'w-[170px]']} />
         ) : items.length === 0 ? (
           <p className="text-sm text-ink-secondary text-center py-10">
             {hayFiltros ? 'Ningún trámite coincide con los filtros.' : 'Todavía no hay trámites. Se crean al convertir una solicitud.'}

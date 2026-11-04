@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import Header from '../components/Header.jsx'
 import Footer from '../components/Footer.jsx'
+import { Skeleton } from '../components/Skeleton.jsx'
 import { validarCodigoSeguimiento } from '../utils/validaciones.js'
 import { guardarCodigo, leerCodigo } from '../utils/codigoSesion.js'
 
@@ -204,6 +205,17 @@ export default function SeguimientoTramite() {
               {buscando ? 'Consultando...' : 'Consultar estado'}
             </button>
           </form>
+
+          {buscando && !tramite && (
+            <div role="status" aria-busy="true" className="mt-6 bg-white rounded-xl border border-gray-200 p-6 sm:p-8">
+              <span className="sr-only">Consultando...</span>
+              <Skeleton className="h-3.5 w-16" />
+              <Skeleton className="mt-2 h-5 w-48" />
+              <Skeleton className="mt-5 h-3.5 w-24" />
+              <Skeleton className="mt-2 h-7 w-32 rounded-full" />
+              <Skeleton className="mt-6 h-12 w-full rounded-lg" />
+            </div>
+          )}
 
           {tramite && (
             <div className="mt-6 bg-white rounded-xl border border-gray-200 p-6 sm:p-8">

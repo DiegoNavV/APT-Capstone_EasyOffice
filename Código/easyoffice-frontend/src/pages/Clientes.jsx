@@ -4,6 +4,7 @@ import { useAuth } from '../lib/AuthContext.jsx'
 import { ApiError } from '../lib/api.js'
 import { listarClientes } from '../lib/clientesApi.js'
 import PaginaPanel from '../components/PaginaPanel.jsx'
+import { SkeletonFilas } from '../components/Skeleton.jsx'
 
 // Vista "Clientes" del panel (mockup Figma, pantalla "5 · Listado de clientes"), conectada a GET /api/clientes
 // (lista, búsqueda y paginación en el servidor). Cada cliente sale con cuántos trámites tiene.
@@ -122,7 +123,7 @@ export default function Clientes() {
             </button>
           </div>
         ) : cargando && items.length === 0 ? (
-          <p className="text-sm text-ink-secondary text-center py-10">Cargando clientes…</p>
+          <SkeletonFilas filas={POR_PAGINA} columnas={['flex-1', 'w-[230px]', 'w-[120px] text-right', 'w-[150px] text-right']} />
         ) : items.length === 0 ? (
           <p className="text-sm text-ink-secondary text-center py-10">
             {q ? 'Ningún cliente coincide con la búsqueda.' : 'Todavía no hay clientes. Se crean al convertir una solicitud en trámite.'}

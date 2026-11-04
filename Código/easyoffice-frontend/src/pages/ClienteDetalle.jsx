@@ -6,6 +6,7 @@ import { obtenerCliente } from '../lib/clientesApi.js'
 import { descargarDocumento, generarDocumento } from '../lib/tramitesApi.js'
 import PaginaPanel from '../components/PaginaPanel.jsx'
 import StatusChip from '../components/StatusChip.jsx'
+import { SkeletonFilas, SkeletonTarjeta } from '../components/Skeleton.jsx'
 
 // Ficha de cliente 360° (mockup Figma, pantalla "6 · Ficha de cliente 360°"): datos de contacto, empresas vinculadas
 // y el historial completo de trámites, con los mismos botones Generar/Descargar que la vista de Trámites.
@@ -176,7 +177,14 @@ export default function ClienteDetalle() {
       </div>
     )
   } else if (cargando && !cliente) {
-    contenido = <p className="text-sm text-ink-secondary text-center py-10">Cargando ficha…</p>
+    contenido = (
+      <div className="max-w-5xl space-y-5">
+        <SkeletonTarjeta lineas={3} />
+        <div className="bg-surface border border-line rounded-[10px] overflow-hidden">
+          <SkeletonFilas filas={4} columnas={['flex-1', 'w-[170px]', 'w-[140px]', 'w-[140px]', 'w-[180px] text-right']} />
+        </div>
+      </div>
+    )
   } else if (cliente) {
     contenido = (
       <div className="max-w-5xl space-y-5">
