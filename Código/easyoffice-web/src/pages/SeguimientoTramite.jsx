@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import Header from '../components/Header.jsx'
 import Footer from '../components/Footer.jsx'
 import { validarCodigoSeguimiento } from '../utils/validaciones.js'
 import { guardarCodigo, leerCodigo } from '../utils/codigoSesion.js'
 
-// Estados posibles (catálogo estado_tramite): esperando_datos, procesando_firma, en_revision (solo caso B), firmado, entregado, cancelado.
+// Estados posibles (catálogo estado_tramite): esperando_datos, procesando_firma, en_revision (solo caso B), firmado, entregado, cancelado, rechazado.
 // "esperando_datos" es el estado inicial: el código ya existe y falta que el cliente complete sus datos.
 const ESTADOS_LABEL = {
   esperando_datos: 'Esperando tus datos',
@@ -13,7 +13,35 @@ const ESTADOS_LABEL = {
   en_revision: 'En revisión',
   firmado: 'Firmado',
   entregado: 'Entregado',
-  cancelado: 'Cancelado'
+  cancelado: 'Cancelado',
+  rechazado: 'Rechazado'
+}
+
+// Qué le decimos al cliente mientras su documento no está listo para descargar.
+const MENSAJE_POR_ESTADO = {
+  procesando_firma: 'Estamos procesando la firma de tu documento. Vuelve a consultar en unos minutos con el mismo código.',
+  en_revision: 'Un agente está revisando tus datos. Vuelve a consultar más tarde con el mismo código.',
+  rechazado: 'No se pudo completar la firma de tu documento. Contacta a tu agente indicando tu código.',
+  cancelado: 'Este trámite fue cancelado. Si crees que es un error, contacta a tu agente indicando tu código.'
+}
+const MENSAJE_POR_DEFECTO = 'Tu documento aún se está procesando. Vuelve a consultar más tarde con el mismo código.'
+
+// El servidor manda el nombre en la cabecera Content-Disposition. Con acentos o ñ viene en el formato
+// filename*=utf-8''Nombre%20codificado.pdf; sin ellos, como filename="Nombre.pdf". Si no se puede leer, uno genérico.
+function nombreDeArchivo(respuesta) {
+  const cabecera = respuesta.headers.get('content-disposition') || ''
+
+  const codificado = cabecera.match(/filename\*=utf-8''([^;]+)/i)
+  if (codificado) {
+    try {
+      return decodeURIComponent(codificado[1].trim())
+    } catch {
+      // Codificación inválida: se prueba con el formato simple.
+    }
+  }
+
+  const simple = cabecera.match(/filename="?([^";]+)"?/i)
+  return simple ? simple[1].trim() : 'documento-firmado.pdf'
 }
 
 export default function SeguimientoTramite() {
@@ -22,7 +50,11 @@ export default function SeguimientoTramite() {
   const [buscando, setBuscando] = useState(false)
   const [tramite, setTramite] = useState(null)
   const [error, setError] = useState(null)
-  const consultaInicial = useRef(false)
+  const [descargando, setDescargando] = useState(false)
+  const [errorDescarga, setErrorDescarga] = useState(null)
+  const [descargado, setDescargado] = useState(false)
+  const { key } = useLocation()
+  const ultimaClave = useRef(null)
 
   const codigoValido = validarCodigoSeguimiento(codigo)
 
@@ -35,6 +67,8 @@ export default function SeguimientoTramite() {
     setBuscando(true)
     setError(null)
     setTramite(null)
+    setErrorDescarga(null)
+    setDescargado(false)
     try {
       const respuesta = await fetch(
         `${import.meta.env.VITE_API_URL}/api/tramites/codigo/${encodeURIComponent(codigoAConsultar)}`
@@ -63,13 +97,67 @@ export default function SeguimientoTramite() {
     }
   }
 
-  // Si el cliente llega con su código ya guardado en la sesión (desde el botón de "Continuar" o
-  // desde el formulario de datos), se consulta de inmediato.
+  // Descarga el documento firmado desde nuestro servidor (nunca desde la API de firma). La primera descarga
+  // deja el trámite como "Entregado"; por eso se actualiza el estado que se muestra.
+  async function descargarDocumento() {
+    setDescargando(true)
+    setErrorDescarga(null)
+    setDescargado(false)
+    try {
+      const respuesta = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/tramites/codigo/${encodeURIComponent(tramite.codigo_seguimiento)}/documento`
+      )
+
+      if (respuesta.status === 429) {
+        setErrorDescarga('Hiciste demasiados intentos en poco tiempo. Espera un minuto e inténtalo de nuevo.')
+        return
+      }
+      if (!respuesta.ok) {
+        let mensaje = 'No pudimos descargar tu documento. Inténtalo de nuevo más tarde.'
+        try {
+          const cuerpo = await respuesta.json()
+          if (typeof cuerpo.detail === 'string') mensaje = cuerpo.detail
+        } catch {
+          // El servidor no devolvió un mensaje legible: se usa el genérico.
+        }
+        setErrorDescarga(mensaje)
+        return
+      }
+
+      const nombre = nombreDeArchivo(respuesta)
+      const blob = await respuesta.blob()
+      const url = URL.createObjectURL(blob)
+      const enlace = document.createElement('a')
+      enlace.href = url
+      enlace.download = nombre
+      document.body.appendChild(enlace)
+      enlace.click()
+      enlace.remove()
+      URL.revokeObjectURL(url)
+
+      setDescargado(true)
+      setTramite((actual) =>
+        actual && actual.estado_actual === 'firmado' ? { ...actual, estado_actual: 'entregado' } : actual
+      )
+    } catch {
+      setErrorDescarga('No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.')
+    } finally {
+      setDescargando(false)
+    }
+  }
+
+  // Cada vez que se llega a esta vista (al abrir la página o al ingresar un código desde la ventana del botón
+  // "Inicia tu trámite" estando ya aquí) se lee el código guardado en la sesión y se consulta de inmediato.
+  // `ultimaClave` evita consultar dos veces en la misma visita (el modo estricto de React ejecuta el efecto doble).
   useEffect(() => {
-    if (consultaInicial.current) return
-    consultaInicial.current = true
-    if (validarCodigoSeguimiento(codigo)) consultarCodigo(codigo.trim().toUpperCase())
-  }, [])
+    if (ultimaClave.current === key) return
+    ultimaClave.current = key
+    const guardado = leerCodigo()
+    if (validarCodigoSeguimiento(guardado)) {
+      setCodigo(guardado)
+      consultarCodigo(guardado.trim().toUpperCase())
+    }
+  }, [key])
 
   function consultar(e) {
     e.preventDefault()
@@ -140,15 +228,29 @@ export default function SeguimientoTramite() {
                   </Link>
                 </>
               ) : tramite.documento_disponible ? (
-                <button
-                  type="button"
-                  className="mt-6 w-full bg-accent hover:bg-amber-500 text-white font-semibold py-3 rounded-lg transition-colors"
-                >
-                  Descargar documento firmado
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={descargarDocumento}
+                    disabled={descargando}
+                    className="mt-6 w-full bg-accent hover:bg-amber-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-lg transition-colors"
+                  >
+                    {descargando ? 'Descargando...' : 'Descargar documento firmado'}
+                  </button>
+                  {errorDescarga && (
+                    <p role="alert" className="mt-3 text-sm text-red-600">
+                      {errorDescarga}
+                    </p>
+                  )}
+                  {descargado && (
+                    <p role="status" className="mt-3 text-sm text-green-700">
+                      Tu documento se descargó correctamente. Puedes volver a descargarlo cuando quieras con tu código.
+                    </p>
+                  )}
+                </>
               ) : (
                 <p className="mt-6 text-sm text-gray-600">
-                  Tu documento aún se está procesando. Vuelve a consultar más tarde con el mismo código.
+                  {MENSAJE_POR_ESTADO[tramite.estado_actual] ?? MENSAJE_POR_DEFECTO}
                 </p>
               )}
             </div>

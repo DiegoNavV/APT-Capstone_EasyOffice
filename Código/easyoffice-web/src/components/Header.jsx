@@ -1,4 +1,6 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+import IniciarTramiteModal from './IniciarTramiteModal.jsx'
 
 const NAV_LINKS = [
   { label: 'Inicio', id: 'inicio' },
@@ -11,13 +13,14 @@ const NAV_LINKS = [
 
 export default function Header({ onIniciarTramite }) {
   const { pathname } = useLocation()
-  const navigate = useNavigate()
   const enHome = pathname === '/'
+  const [modalAbierto, setModalAbierto] = useState(false)
 
-  // En el home abre la ventana emergente; en las demás páginas lleva al formulario.
+  // Si la página entrega su propia función (el inicio), se usa esa. En todas las demás páginas el header abre su
+  // propia ventana emergente para ingresar el código, así el botón funciona igual en todo el sitio.
   function iniciarTramite() {
     if (onIniciarTramite) onIniciarTramite()
-    else navigate('/iniciar-tramite')
+    else setModalAbierto(true)
   }
 
   return (
@@ -38,14 +41,6 @@ export default function Header({ onIniciarTramite }) {
       {/* Header principal */}
       <header className="w-full bg-white border-b border-gray-100 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-24">
-          <button
-            type="button"
-            onClick={iniciarTramite}
-            className="..." // deja las mismas clases que ya tenía el botón verde
-          >
-            Inicia tu trámite
-          </button>
-
           <nav className="hidden lg:flex items-center gap-6">
             {NAV_LINKS.map((link) => {
               const activo = enHome && link.id === 'inicio'
@@ -76,6 +71,9 @@ export default function Header({ onIniciarTramite }) {
           </button>
         </div>
       </header>
+
+      {/* Solo se usa cuando la página no trae su propia ventana (todas menos el inicio). */}
+      <IniciarTramiteModal open={modalAbierto} onClose={() => setModalAbierto(false)} />
     </>
   )
 }

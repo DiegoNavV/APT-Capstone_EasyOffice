@@ -12,7 +12,10 @@ INSERT INTO estado_tramite (codigo, etiqueta, orden, es_final, documento_disponi
     ('procesando_firma', 'Procesando firma',            3, FALSE, FALSE, TRUE),
     ('firmado',          'Firmado',                     4, FALSE, TRUE,  FALSE),
     ('entregado',        'Entregado',                   5, TRUE,  TRUE,  FALSE),
-    ('cancelado',        'Cancelado',                   6, TRUE,  FALSE, FALSE)
+    ('cancelado',        'Cancelado',                   6, TRUE,  FALSE, FALSE),
+    -- El cliente rechazo el documento en la firma o vencio el plazo para firmar.
+    -- No es final: se puede corregir y reenviar a firma.
+    ('rechazado',        'Rechazado',                   7, FALSE, FALSE, TRUE)
 ON CONFLICT (codigo) DO NOTHING;
 
 -- Codigos iguales a CICLOS_PAGO de app/condiciones.py.

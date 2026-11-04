@@ -305,6 +305,8 @@ class TramiteListadoOut(BaseModel):
     # True si ya se generó un PDF del trámite (ver /api/tramites/{id}/documento).
     tiene_documento: bool = False
     folio: Optional[str] = None  # el panel lo usa para nombrar el PDF descargado
+    # Si el envío a firma está detenido, el motivo para que el agente intervenga (ver app/envio_firma.py).
+    aviso_firma: Optional[str] = None
 
 
 class TramitesPaginaOut(BaseModel):

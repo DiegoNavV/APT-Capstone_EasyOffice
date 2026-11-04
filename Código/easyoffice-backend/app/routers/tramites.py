@@ -1,12 +1,12 @@
 import base64
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
-from app import campos_servicio, crud, models, schemas, vista_previa
+from app import campos_servicio, crud, documentos, envio_firma, models, schemas, vista_previa
 from app.database import get_db
 from app.seguridad import get_usuario_actual, limiter
 
@@ -80,6 +80,38 @@ def consultar_tramite_por_codigo(request: Request, codigo: str, db: Session = De
         documento_disponible=crud.documento_disponible(tramite),
     )
 
+
+@router.get("/codigo/{codigo}/documento")
+@limiter.limit("10/minute")
+def descargar_documento_cliente(request: Request, codigo: str, db: Session = Depends(get_db)):
+    """Público — el cliente descarga su documento FIRMADO con su código de seguimiento (no tiene cuenta).
+
+    Solo está disponible con el trámite firmado o entregado. La primera descarga lo marca como entregado.
+    El archivo sale siempre de este servidor, nunca de la API de firma. Límite de 10 descargas por minuto por IP
+    (el código es la única credencial y el PDF contiene datos personales)."""
+    if len(codigo.strip()) != 8:
+        raise HTTPException(status_code=400, detail="El código debe tener 8 caracteres.")
+
+    tramite = crud.obtener_tramite_por_codigo(db, codigo)
+    if not tramite:
+        raise HTTPException(status_code=404, detail="No encontramos un trámite con ese código.")
+
+    if not crud.documento_disponible(tramite):
+        raise HTTPException(status_code=409, detail="Tu documento todavía no está listo para descargar.")
+
+    ruta = documentos.ruta_del_documento(tramite)
+    if ruta is None:
+        raise HTTPException(status_code=404, detail="No encontramos el documento de este trámite. Contacta a tu agente.")
+
+    crud.registrar_entrega(db, tramite)
+    return FileResponse(
+        ruta,
+        media_type="application/pdf",
+        filename=documentos.nombre_para_cliente(tramite),
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
 @router.get("/codigo/{codigo}/formulario", response_model=schemas.FormularioOut)
 @limiter.limit("30/minute")
 def obtener_formulario_cliente(request: Request, codigo: str, db: Session = Depends(get_db)):
@@ -103,6 +135,7 @@ def enviar_datos_cliente(
     request: Request,
     codigo: str,
     envio: schemas.EnvioDatosIn,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """Público — el cliente envía UNA sola vez los datos que faltan de su empresa.
@@ -126,6 +159,17 @@ def enviar_datos_cliente(
         )
     except crud.EnvioDatosRechazado as e:
         raise HTTPException(status_code=409, detail=e.mensaje)
+
+    # Sus datos ya quedaron guardados. Si el trámite sigue su camino a la firma (los que piden revisión humana esperan al agente), se 
+    # manda el documento a la API de firma. La IP y el navegador del cliente quedan como evidencia de su aceptación. No lanza: si algo 
+    # falla, el trámite sigue en procesando_firma.
+    if tramite.estado_actual == envio_firma.ESTADO_PROCESANDO_FIRMA:
+        background_tasks.add_task(
+            envio_firma.enviar_en_segundo_plano,
+            tramite.id_tramite,
+            get_remote_address(request),
+            request.headers.get("user-agent", "")[:500],
+        )
 
     return schemas.SeguimientoOut(
         codigo_seguimiento=tramite.codigo_seguimiento,

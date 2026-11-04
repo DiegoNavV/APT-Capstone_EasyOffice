@@ -251,7 +251,9 @@ CREATE TABLE tramite
      ruta_documento_generado VARCHAR (255) ,
      fecha_creacion          TIMESTAMP  NOT NULL DEFAULT (now() AT TIME ZONE 'utc') ,
      fecha_actualizacion     TIMESTAMP  NOT NULL DEFAULT (now() AT TIME ZONE 'utc') ,
-     plantilla_documento_id  INTEGER
+     plantilla_documento_id  INTEGER ,
+     -- Id del documento en la API de firma: se llena al enviarlo a firmar.
+     documento_firma_id      VARCHAR (36)
     )
 ;
 
@@ -317,7 +319,9 @@ ALTER TABLE estado_tramite      ADD CONSTRAINT uq_estado_tramite_orden       UNI
 ALTER TABLE tramite             ADD CONSTRAINT uq_tramite_codigo_seguimiento UNIQUE (codigo_seguimiento),
                                 ADD CONSTRAINT uq_tramite_folio              UNIQUE (folio),
                                 -- Una solicitud genera como maximo un tramite (relacion 1:1).
-                                ADD CONSTRAINT uq_tramite_solicitud_contacto UNIQUE (solicitud_contacto_id);
+                                ADD CONSTRAINT uq_tramite_solicitud_contacto UNIQUE (solicitud_contacto_id),
+                                -- Un documento de la API de firma pertenece a un solo tramite.
+                                ADD CONSTRAINT uq_tramite_documento_firma    UNIQUE (documento_firma_id);
 
 
 -- =========================================================

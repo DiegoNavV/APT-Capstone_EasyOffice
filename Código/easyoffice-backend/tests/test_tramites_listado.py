@@ -3,7 +3,7 @@ Pruebas de GET /api/tramites (listado del panel) y GET /api/tramites/resumen (KP
 login: devuelven datos de clientes.
 """
 from datetime import datetime, timedelta, timezone
-
+from tests.conftest import crear_empresa
 import pytest
 from sqlalchemy import text
 
@@ -322,3 +322,83 @@ class TestResumen:
         texto = str(client.get(URL_RESUMEN, headers=auth).json())
         for dato in ("Juan", "12345678", "juan@example.com"):
             assert dato not in texto
+
+
+class TestAvisoFirma:
+    """El listado avisa al agente cuando un trámite en firma no puede avanzar."""
+
+    def test_trámite_sin_correo_del_firmante_trae_el_aviso(self, client, auth, hacer_tramite, db_session):
+        t = hacer_tramite()
+        _set_estado(db_session, t["id_tramite"], "procesando_firma")
+
+        items = client.get(URL, headers=auth).json()["items"]
+
+        assert items[0]["aviso_firma"] == "Falta el correo del firmante."
+
+    def test_trámite_en_otro_estado_no_trae_aviso(self, client, auth, hacer_tramite):
+        hacer_tramite()
+
+        items = client.get(URL, headers=auth).json()["items"]
+
+        assert items[0]["estado_actual"] == "esperando_datos"
+        assert items[0]["aviso_firma"] is None
+
+    def test_trámite_ya_enviado_a_firma_y_reciente_no_trae_aviso(self, client, auth, hacer_tramite, db_session):
+        t = hacer_tramite()
+        _set_estado(db_session, t["id_tramite"], "procesando_firma")
+        tramite = db_session.get(models.Tramite, t["id_tramite"])
+        tramite.documento_firma_id = "11111111-2222-3333-4444-555555555555"
+        db_session.commit()
+
+        items = client.get(URL, headers=auth).json()["items"]
+
+        assert items[0]["aviso_firma"] is None
+
+class TestEmpresaEnListado:
+    """Con datos de empresa el listado muestra la razón social y el RUT de la empresa (como el mockup)."""
+
+    def _vincular_empresa(self, db_session, id_tramite, **campos):
+        empresa = crear_empresa(db_session, **campos)
+        tramite = db_session.get(models.Tramite, id_tramite)
+        tramite.id_empresa = empresa.id_empresa
+        db_session.commit()
+        return empresa
+
+    def test_sin_empresa_muestra_al_solicitante_con_datos_pendientes(self, client, auth, hacer_tramite):
+        hacer_tramite()
+
+        cliente = client.get(URL, headers=auth).json()["items"][0]["cliente"]
+
+        assert cliente["datos_pendientes"] is True
+
+    def test_con_empresa_muestra_razon_social_y_rut_de_la_empresa(self, client, auth, hacer_tramite, db_session):
+        t = hacer_tramite()
+        self._vincular_empresa(db_session, t["id_tramite"], rut_empresa="76123456-0", razon_social="Comercial Prueba SpA")
+
+        cliente = client.get(URL, headers=auth).json()["items"][0]["cliente"]
+
+        assert cliente == {"nombre": "Comercial Prueba SpA", "rut": "76123456-0", "datos_pendientes": False}
+
+    def test_busca_por_razon_social_de_la_empresa(self, client, auth, hacer_tramite, db_session):
+        t = hacer_tramite()
+        self._vincular_empresa(db_session, t["id_tramite"], razon_social="Comercial Prueba SpA")
+
+        datos = client.get(URL, params={"q": "comercial prueba"}, headers=auth).json()
+
+        assert datos["total"] == 1
+
+    def test_busca_por_rut_de_la_empresa(self, client, auth, hacer_tramite, db_session):
+        t = hacer_tramite()
+        self._vincular_empresa(db_session, t["id_tramite"], rut_empresa="76123456-0")
+
+        datos = client.get(URL, params={"q": "76.123.456-0"}, headers=auth).json()
+
+        assert datos["total"] == 1
+
+    def test_busqueda_sin_coincidencias_no_devuelve_el_tramite(self, client, auth, hacer_tramite, db_session):
+        t = hacer_tramite()
+        self._vincular_empresa(db_session, t["id_tramite"], razon_social="Comercial Prueba SpA")
+
+        datos = client.get(URL, params={"q": "zzzz-no-existe"}, headers=auth).json()
+
+        assert datos["total"] == 0
