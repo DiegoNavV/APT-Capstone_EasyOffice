@@ -559,6 +559,30 @@ def documento_disponible(tramite: models.Tramite) -> bool:
     return tramite.estado_actual in ESTADOS_DOCUMENTO_DISPONIBLE
 
 
+def registrar_entrega(db: Session, tramite: models.Tramite) -> models.Tramite:
+    """El cliente descargó su documento firmado: el trámite pasa de `firmado` a `entregado` y queda constancia
+    en el historial. Si ya estaba `entregado` (descarga repetida) o en otro estado, no cambia nada.
+
+    Dos descargas casi simultáneas pueden intentar marcarlo a la vez: la segunda choca con
+    fn_historial_no_duplicado (no repite el mismo estado dos veces seguidas) y se ignora, porque el
+    resultado que se buscaba ya quedó registrado."""
+    if tramite.estado_actual != "firmado":
+        return tramite
+    try:
+        tramite.estado_actual = "entregado"
+        db.add(models.HistorialEstado(
+            id_tramite=tramite.id_tramite,
+            estado="entregado",
+            origen="cliente",
+            comentario="El cliente descargó su documento firmado.",
+        ))
+        db.commit()
+    except (IntegrityError, InternalError):
+        db.rollback()
+    db.refresh(tramite)
+    return tramite
+
+
 # ---------------------------------------------------------------------------
 # Formulario del cliente (público, se accede con el código del trámite)
 # ---------------------------------------------------------------------------
