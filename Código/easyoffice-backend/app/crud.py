@@ -613,9 +613,17 @@ def obtener_formulario(tramite: models.Tramite) -> schemas.FormularioOut:
 def _datos_cliente_listado(tramite: models.Tramite) -> schemas.ClienteListadoOut:
     """ÚNICO lugar que decide qué "cliente" se muestra en el listado.
 
-    Hoy: los datos de contacto de quien pidió el trámite, con `datos_pendientes=True` porque la empresa aún no completa sus datos.
-    Cuando exista el formulario posterior al código, aquí se devolverán la razón social y el RUT de la empresa (y `datos_pendientes=False`). 
+    Si el cliente ya completó los datos de su empresa, se muestran la razón social y el RUT de la empresa
+    (como en el mockup). Mientras no exista la empresa, se muestran los datos de contacto de quien pidió
+    el trámite, con `datos_pendientes=True`.
     El filtro de búsqueda (`_filtro_busqueda`) debe actualizarse junto con esta función."""
+    empresa = tramite.empresa
+    if empresa is not None and empresa.razon_social:
+        return schemas.ClienteListadoOut(
+            nombre=empresa.razon_social,
+            rut=empresa.rut_empresa,
+            datos_pendientes=False,
+        )
     cliente = tramite.cliente
     return schemas.ClienteListadoOut(
         nombre=cliente.nombre,
@@ -629,13 +637,18 @@ def _escapar_like(texto: str) -> str:
 
 
 def _filtro_busqueda(texto: str):
-    """Coincidencia parcial por nombre o RUT del cliente, o por código del
-    trámite. El RUT se compara tal como se guarda (sin puntos, DV en mayúscula)."""
+    """
+    Coincidencia parcial por nombre o RUT del cliente, por razón social o RUT de la empresa, o por código del trámite. El RUT se compara 
+    tal como se guarda (sin puntos, DV en mayúscula).
+    Requiere que la consulta tenga unido el cliente y la empresa (esta última con outer join).
+    """
     patron = f"%{_escapar_like(texto.strip())}%"
     patron_rut = f"%{_escapar_like(normalizar_rut(texto) or texto.strip())}%"
     return or_(
         models.Cliente.nombre.ilike(patron, escape="\\"),
         models.Cliente.rut.ilike(patron_rut, escape="\\"),
+        models.Empresa.razon_social.ilike(patron, escape="\\"),
+        models.Empresa.rut_empresa.ilike(patron_rut, escape="\\"),
         models.Tramite.codigo_seguimiento.ilike(patron, escape="\\"),
     )
 
@@ -651,7 +664,8 @@ def listar_tramites(
 ) -> schemas.TramitesPaginaOut:
     """Trámites con filtros opcionales, los más recientemente actualizados
     primero. `total` cuenta todos los que cumplen los filtros (para paginar)."""
-    base = db.query(models.Tramite).join(models.Tramite.cliente)
+    # La empresa se une con outer join: un trámite sin datos de empresa todavía debe aparecer.
+    base = db.query(models.Tramite).join(models.Tramite.cliente).outerjoin(models.Tramite.empresa)
     if servicio_id is not None:
         base = base.filter(models.Tramite.id_servicio == servicio_id)
     if estado:
@@ -665,6 +679,8 @@ def listar_tramites(
     tramites = (
         base.options(
             contains_eager(models.Tramite.cliente),
+            contains_eager(models.Tramite.empresa).joinedload(models.Empresa.representante),
+            joinedload(models.Tramite.datos_empresa),
             joinedload(models.Tramite.servicio),
             joinedload(models.Tramite.usuario_responsable),
         )
