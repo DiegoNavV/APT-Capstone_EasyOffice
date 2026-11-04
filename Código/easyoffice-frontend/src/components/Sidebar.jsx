@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom'
+import Icono from './Iconos.jsx'
 
 // Sidebar del panel interno (mockup Figma, pantalla "2 · Listado de trámites").
 // "Solicitudes" no está en el mockup original, pero se agregó acá porque es una vista real ya construida (solicitud de contacto -> trámite).
@@ -6,6 +7,7 @@ import { NavLink } from 'react-router-dom'
 // (ver Proximamente.jsx y las rutas en App.jsx); a medida que se construyan, se activan en App.jsx.
 // Reportes navega siempre (no se oculta para agentes): el backend decide con `puede_ver` si se le muestran los datos o un aviso.
 // Cerrar sesión no va acá: está en el menú desplegable del avatar (UserMenu).
+// `id` es también el nombre del icono (ver Iconos.jsx).
 const ITEMS = [
   { id: 'tramites', label: 'Trámites', href: '/panel/tramites' },
   { id: 'solicitudes', label: 'Solicitudes', href: '/panel/solicitudes' },
@@ -16,13 +18,9 @@ const ITEMS = [
 
 const CLASES_BASE = 'flex items-center gap-2.5 px-3.5 py-2.5 rounded-md w-full text-sm font-medium transition-colors'
 
-function Icono({ activo }) {
-  return <span className={`block rounded-[5px] size-[18px] shrink-0 ${activo ? 'bg-white' : 'bg-sidebar-fg'}`} />
-}
-
 // NavLink marca solo cuál es la página actual (isActive); no hace falta que
-// cada vista le diga al Sidebar dónde está.
-function NavItem({ label, href }) {
+// cada vista le diga al Sidebar dónde está. El icono toma el color del texto del botón.
+function NavItem({ id, label, href }) {
   return (
     <NavLink
       to={href}
@@ -30,12 +28,8 @@ function NavItem({ label, href }) {
         `${CLASES_BASE} ${isActive ? 'bg-sidebar-active-bg text-white' : 'text-sidebar-fg hover:text-white cursor-pointer'}`
       }
     >
-      {({ isActive }) => (
-        <>
-          <Icono activo={isActive} />
-          {label}
-        </>
-      )}
+      <Icono nombre={id} />
+      {label}
     </NavLink>
   )
 }
@@ -51,12 +45,12 @@ export default function Sidebar() {
       </div>
 
       {ITEMS.map((item) => (
-        <NavItem key={item.id} label={item.label} href={item.href} />
+        <NavItem key={item.id} id={item.id} label={item.label} href={item.href} />
       ))}
 
       <div className="flex-1" />
 
-      <NavItem label="Configuración" href="/panel/configuracion" />
+      <NavItem id="configuracion" label="Configuración" href="/panel/configuracion" />
     </aside>
   )
 }
