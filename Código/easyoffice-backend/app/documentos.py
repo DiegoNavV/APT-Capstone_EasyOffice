@@ -10,6 +10,7 @@ Todavía NO cambia el estado del trámite ni envía nada a la firma: eso es el p
 import hashlib
 import logging
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -58,6 +59,25 @@ def ruta_del_documento(tramite: models.Tramite) -> Path | None:
 
 def nombre_para_descargar(tramite: models.Tramite) -> str:
     return f"{tramite.folio or 'tramite-' + str(tramite.id_tramite)}.pdf"
+
+
+# Caracteres que Windows y otros sistemas no aceptan en un nombre de archivo.
+_CARACTERES_NO_PERMITIDOS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+
+
+def nombre_para_cliente(tramite: models.Tramite) -> str:
+    """
+    Nombre del PDF que descarga el cliente: «Servicio - Razón social.pdf» (por ejemplo sistema de archivos no acepta se reemplazan 
+    por un espacio y el largo se limita. Si el trámite aún no tiene empresa, queda solo el nombre del servicio.
+    """
+    partes = [tramite.servicio.nombre]
+    if tramite.empresa is not None and tramite.empresa.razon_social:
+        partes.append(tramite.empresa.razon_social)
+    nombre = _CARACTERES_NO_PERMITIDOS.sub(" ", " - ".join(partes))
+    nombre = re.sub(r"\s+", " ", nombre).strip(" .")
+    if not nombre:
+        return nombre_para_descargar(tramite)
+    return f"{nombre[:120].rstrip()}.pdf"
 
 
 def _plantilla_activa(db: Session, tramite: models.Tramite) -> models.PlantillaDocumento:

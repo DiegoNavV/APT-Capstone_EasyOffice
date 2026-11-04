@@ -2,11 +2,11 @@ import base64
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
-from app import campos_servicio, crud, envio_firma, models, schemas, vista_previa
+from app import campos_servicio, crud, documentos, envio_firma, models, schemas, vista_previa
 from app.database import get_db
 from app.seguridad import get_usuario_actual, limiter
 
@@ -79,6 +79,38 @@ def consultar_tramite_por_codigo(request: Request, codigo: str, db: Session = De
         estado_actual=tramite.estado_actual,
         documento_disponible=crud.documento_disponible(tramite),
     )
+
+
+@router.get("/codigo/{codigo}/documento")
+@limiter.limit("10/minute")
+def descargar_documento_cliente(request: Request, codigo: str, db: Session = Depends(get_db)):
+    """Público — el cliente descarga su documento FIRMADO con su código de seguimiento (no tiene cuenta).
+
+    Solo está disponible con el trámite firmado o entregado. La primera descarga lo marca como entregado.
+    El archivo sale siempre de este servidor, nunca de la API de firma. Límite de 10 descargas por minuto por IP
+    (el código es la única credencial y el PDF contiene datos personales)."""
+    if len(codigo.strip()) != 8:
+        raise HTTPException(status_code=400, detail="El código debe tener 8 caracteres.")
+
+    tramite = crud.obtener_tramite_por_codigo(db, codigo)
+    if not tramite:
+        raise HTTPException(status_code=404, detail="No encontramos un trámite con ese código.")
+
+    if not crud.documento_disponible(tramite):
+        raise HTTPException(status_code=409, detail="Tu documento todavía no está listo para descargar.")
+
+    ruta = documentos.ruta_del_documento(tramite)
+    if ruta is None:
+        raise HTTPException(status_code=404, detail="No encontramos el documento de este trámite. Contacta a tu agente.")
+
+    crud.registrar_entrega(db, tramite)
+    return FileResponse(
+        ruta,
+        media_type="application/pdf",
+        filename=documentos.nombre_para_cliente(tramite),
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
 
 @router.get("/codigo/{codigo}/formulario", response_model=schemas.FormularioOut)
 @limiter.limit("30/minute")

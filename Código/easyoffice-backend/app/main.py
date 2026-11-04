@@ -34,6 +34,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # El sitio del cliente lee de aquí el nombre del PDF que descarga ("Servicio - Empresa.pdf").
+    expose_headers=["Content-Disposition"],
 )
 
 app.include_router(auth.router)

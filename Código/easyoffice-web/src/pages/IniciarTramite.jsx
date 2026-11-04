@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import Header from '../components/Header.jsx'
 import Footer from '../components/Footer.jsx'
 import {
@@ -21,19 +22,33 @@ const SERVICIOS = [
 
 const MENSAJE_MAX = 500
 
+const FORM_INICIAL = {
+  nombre: '',
+  rut: '',
+  email: '',
+  telefono: '',
+  servicioId: '',
+  mensaje: ''
+}
+
 export default function IniciarTramite() {
-  const [form, setForm] = useState({
-    nombre: '',
-    rut: '',
-    email: '',
-    telefono: '',
-    servicioId: '',
-    mensaje: ''
-  })
+  const { key } = useLocation()
+  const [form, setForm] = useState(FORM_INICIAL)
   const [tocado, setTocado] = useState({})
   const [enviando, setEnviando] = useState(false)
   const [enviado, setEnviado] = useState(false)
   const [error, setError] = useState(null)
+
+  // Cada vez que se navega a esta vista (por ejemplo con "Contrata aquí" estando ya en ella) cambia la `key` de la
+  // ubicación: el formulario vuelve a empezar vacío, sin avisos, y se muestra desde arriba.
+  useEffect(() => {
+    setForm(FORM_INICIAL)
+    setTocado({})
+    setEnviando(false)
+    setEnviado(false)
+    setError(null)
+    window.scrollTo({ top: 0 })
+  }, [key])
 
   function setCampo(campo, valor) {
     if (campo === 'rut') valor = formatearRut(valor)
