@@ -307,7 +307,7 @@ class Tramite(Base):
     id_plantilla = Column("plantilla_documento_id", Integer, ForeignKey("plantilla_documento.id"), index=True)
     # Id del documento en la API de firma (UUID en texto). Se llena al enviarlo a firmar.
     documento_firma_id = Column(String(36), unique=True)
-    
+
     cliente = relationship("Cliente")
     servicio = relationship("ServicioContratado")
     usuario_responsable = relationship("Usuario")
