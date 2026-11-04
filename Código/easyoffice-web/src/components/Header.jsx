@@ -41,26 +41,33 @@ export default function Header({ onIniciarTramite }) {
       {/* Header principal */}
       <header className="w-full bg-white border-b border-gray-100 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-24">
-          <nav className="hidden lg:flex items-center gap-6">
-            {NAV_LINKS.map((link) => {
-              const activo = enHome && link.id === 'inicio'
-              const clases = `text-sm font-medium pb-1 border-b-2 transition-colors
-                  ${activo
-                    ? 'text-primary border-primary'
-                    : 'text-gray-700 border-transparent hover:text-primary hover:border-primary'}`
+          <div className="flex items-center gap-8">
+            <Link to="/" aria-label="Easy Office, ir al inicio" className="flex flex-col items-center leading-none">
+              <img src="/favicon.png" alt="" width="48" height="48" className="w-12 h-12" />
+              <span className="mt-0.5 text-[13px] tracking-[0.18em] text-gray-600">easy office</span>
+            </Link>
 
-              // Dentro del home se salta a la sección; desde otra página se vuelve al home y se baja a ella.
-              return enHome ? (
-                <a key={link.id} href={`#${link.id}`} className={clases}>
-                  {link.label}
-                </a>
-              ) : (
-                <Link key={link.id} to={{ pathname: '/', hash: `#${link.id}` }} className={clases}>
-                  {link.label}
-                </Link>
-              )
-            })}
-          </nav>
+            <nav className="hidden lg:flex items-center gap-6">
+              {NAV_LINKS.map((link) => {
+                const activo = enHome && link.id === 'inicio'
+                const clases = `text-sm font-medium pb-1 border-b-2 transition-colors
+                    ${activo
+                      ? 'text-primary border-primary'
+                      : 'text-gray-700 border-transparent hover:text-primary hover:border-primary'}`
+
+                // Dentro del home se salta a la sección; desde otra página se vuelve al home y se baja a ella.
+                return enHome ? (
+                  <a key={link.id} href={`#${link.id}`} className={clases}>
+                    {link.label}
+                  </a>
+                ) : (
+                  <Link key={link.id} to={{ pathname: '/', hash: `#${link.id}` }} className={clases}>
+                    {link.label}
+                  </Link>
+                )
+              })}
+            </nav>
+          </div>
 
           <button
             type="button"
