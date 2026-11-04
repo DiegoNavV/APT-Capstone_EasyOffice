@@ -9,7 +9,7 @@ const SERVICIOS_SELECT = [
 
 export default function Hero() {
   return (
-    <section id="inicio" className="relative bg-ink text-white overflow-hidden">
+    <section id="inicio" className="relative bg-ink text-white overflow-hidden scroll-mt-28">
       {/* TODO: reemplazar por la foto real de oficina del sitio (bg-cover) cuando tengamos el asset */}
       <div className="absolute inset-0 bg-gradient-to-br from-gray-900 via-ink to-gray-900" />
 
@@ -40,7 +40,7 @@ export default function Hero() {
           <form className="mt-4 space-y-3">
             <Campo tipo="select">
               <label className="text-sm text-gray-500 block mb-1">Seleccione servicio</label>
-              <select className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm">
+              <select className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-base sm:text-sm">
                 {SERVICIOS_SELECT.map((s) => (
                   <option key={s}>{s}</option>
                 ))}
@@ -50,22 +50,22 @@ export default function Hero() {
             <input
               type="text"
               placeholder="Nombre completo"
-              className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm"
+              className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-base sm:text-sm"
             />
             <input
               type="email"
               placeholder="Correo electrónico"
-              className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm"
+              className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-base sm:text-sm"
             />
             <input
               type="text"
               placeholder="Teléfono"
-              className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm"
+              className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-base sm:text-sm"
             />
             <textarea
               placeholder="Escriba su mensaje..."
               rows={3}
-              className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm resize-none"
+              className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-base sm:text-sm resize-none"
             />
 
             <button

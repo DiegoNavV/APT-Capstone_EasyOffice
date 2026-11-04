@@ -193,7 +193,7 @@ export default function SeguimientoTramite() {
                 value={codigo}
                 onChange={(e) => onCambiarCodigo(e.target.value)}
                 placeholder="Ej: A1B2C3D4"
-                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm tracking-widest text-center font-semibold focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base sm:text-sm tracking-widest text-center font-semibold focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
               />
             </label>
             {error && <p className="mt-3 text-sm text-red-600">{error}</p>}

@@ -34,19 +34,21 @@ export default function IniciarTramiteModal({ open, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center px-4"
+      className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center px-4 overflow-y-auto"
       onClick={onClose}
     >
+      {/* Con el celular en horizontal o el teclado abierto, la caja no pasa del alto visible y hace scroll propio. */}
       <div
-        className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 sm:p-8"
+        className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 sm:p-8 max-h-[calc(100dvh-2rem)] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between">
           <h2 className="text-xl font-bold text-ink">Ingresa tu código de trámite</h2>
+          {/* Zona táctil de 40x40; los márgenes negativos la compensan para que la "×" quede donde estaba. */}
           <button
             type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+            className="text-gray-400 hover:text-gray-600 text-xl leading-none size-10 shrink-0 flex items-center justify-center -my-2.5 -mr-3"
             aria-label="Cerrar"
           >
             ×
@@ -66,7 +68,7 @@ export default function IniciarTramiteModal({ open, onClose }) {
             onChange={(e) => onCambiarCodigo(e.target.value)}
             onBlur={() => setTocado(true)}
             placeholder="Ej: A1B2C3D4"
-            className={`w-full border rounded-md px-3 py-2.5 text-sm tracking-widest text-center font-semibold focus:outline-none focus:ring-2 focus:border-primary ${
+            className={`w-full border rounded-md px-3 py-2.5 text-base sm:text-sm tracking-widest text-center font-semibold focus:outline-none focus:ring-2 focus:border-primary ${
               tocado && !codigoValido ? 'border-red-400 focus:ring-red-200' : 'border-gray-300 focus:ring-primary/40'
             }`}
           />
