@@ -1,6 +1,6 @@
 export default function AboutStats() {
   return (
-    <section id="sobre-nosotros" className="py-16 bg-white">
+    <section id="sobre-nosotros" className="py-16 bg-white scroll-mt-28">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-2 gap-12 items-start">
         <div>
           {/* TODO: reemplazar por la foto real de la sección "Sobre nosotros" */}
@@ -8,7 +8,7 @@ export default function AboutStats() {
             Foto equipo / emprendedor
           </div>
 
-          <div className="mt-8 flex gap-16 border-t border-gray-200 pt-6">
+          <div className="mt-8 flex gap-10 sm:gap-16 border-t border-gray-200 pt-6">
             <div>
               <p className="text-4xl font-extrabold text-ink">5000+</p>
               <p className="mt-1 text-sm text-gray-600">Emprendimientos exitosos</p>

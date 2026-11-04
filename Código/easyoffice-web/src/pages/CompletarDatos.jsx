@@ -523,7 +523,7 @@ export default function CompletarDatos() {
                                 onBlur={() => setTocados((t) => ({ ...t, [c.clave]: true }))}
                                 aria-invalid={error ? 'true' : 'false'}
                                 aria-describedby={`${id}-ayuda`}
-                                className={`mt-1 min-h-[44px] w-full rounded-md border bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 ${
+                                className={`mt-1 min-h-[44px] w-full rounded-md border bg-white px-3 py-2.5 text-base sm:text-sm focus:outline-none focus:ring-2 ${
                                   error
                                     ? 'border-red-500 focus:border-red-600 focus:ring-red-200'
                                     : 'border-gray-300 focus:border-green-700 focus:ring-green-700/30'
