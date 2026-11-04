@@ -5,10 +5,7 @@ export default function Footer() {
     <footer className="bg-ink text-gray-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 grid sm:grid-cols-2 lg:grid-cols-4 gap-10">
         <div>
-          <svg width="70" height="70" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="14" cy="20" r="9" stroke="#22B14C" strokeWidth="4" />
-            <circle cx="26" cy="20" r="9" stroke="#22B14C" strokeWidth="4" />
-          </svg>
+          <img src="/favicon.png" alt="Easy Office" width="70" height="70" className="w-[70px] h-[70px]" />
           <p className="mt-2 font-bold text-white">easy office</p>
         </div>
 
