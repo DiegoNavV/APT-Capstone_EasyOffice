@@ -14,3 +14,5 @@ python-multipart==0.0.26
 lxml==6.1.0
 # Marca de agua sobre las imagenes del borrador
 Pillow==11.0.0
+# Tarea periodica de anonimizacion (ver app/scheduler.py)
+APScheduler==3.11.3

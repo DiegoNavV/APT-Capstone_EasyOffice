@@ -8,8 +8,9 @@ fecha_anonimizacion, dejando la fila (estado, fechas, historial) para trazabilid
 El resultado exacto de anonimizar lo exige ck_solicitud_anonimizacion en
 db/init/01_schema.sql: estado = 'descartada' y los 5 campos en NULL cuando
 fecha_anonimizacion no es NULL. Esta función solo implementa esa regla con un criterio de
-cuándo aplicarla; la pensada para correr periódicamente es
-scripts/anonimizar_solicitudes_vencidas.py, no para llamarse desde un endpoint.
+cuándo aplicarla; quien la corre periódicamente es app/scheduler.py (todos los días, vía
+APScheduler dentro del propio backend). scripts/anonimizar_solicitudes_vencidas.py sigue
+disponible para correrla a mano si alguien necesita forzarla fuera de ese horario.
 """
 from calendar import monthrange
 from datetime import datetime
