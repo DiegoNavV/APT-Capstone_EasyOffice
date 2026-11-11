@@ -1,12 +1,13 @@
 import base64
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
-from app import campos_servicio, crud, documentos, envio_firma, models, schemas, vista_previa
+from app import campos_servicio, crud, documentos, envio_firma, informe_tramites, models, schemas, vista_previa
 from app.database import get_db
 from app.seguridad import get_usuario_actual, limiter
 
@@ -59,6 +60,30 @@ def reporte_tramites(
     if usuario.rol_nombre.lower() != "administrador":
         return schemas.ReporteTramitesOut(puede_ver=False)
     return crud.reporte_tramites(db)
+
+
+@router.get("/reporte/informe")
+def informe_tramites_pdf(
+    db: Session = Depends(get_db),
+    usuario: models.Usuario = Depends(get_usuario_actual),
+):
+    """Exclusivo de administradores: el informe PDF con membrete y gráficos de los mismos conteos de /reporte
+    (ver app/informe_tramites.py). Nunca lleva datos personales, solo los conteos agregados."""
+    if usuario.rol_nombre.lower() != "administrador":
+        raise HTTPException(status_code=403, detail="No tienes permiso para generar este informe.")
+
+    reporte = crud.reporte_tramites(db)
+    try:
+        pdf = informe_tramites.construir_informe_pdf(reporte)
+    except informe_tramites.InformeNoGenerable as e:
+        raise HTTPException(status_code=e.codigo_http, detail=str(e)) from None
+
+    nombre = f"informe-tramites-{date.today():%Y-%m-%d}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
+    )
 
 
 @router.get("/codigo/{codigo}", response_model=schemas.SeguimientoOut)
