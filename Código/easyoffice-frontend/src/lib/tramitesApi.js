@@ -59,3 +59,16 @@ export async function descargarDocumento({ accessToken, idTramite }) {
 export function obtenerReporteTramites({ accessToken }) {
   return pedir('/api/tramites/reporte', { accessToken })
 }
+
+// Informe PDF (con membrete y gráficos) de los mismos conteos de /reporte. Devuelve el Blob;
+// la pantalla lo entrega al navegador, igual que descargarDocumento.
+export async function descargarInformeTramites({ accessToken }) {
+  const res = await fetch(`${API_URL}/api/tramites/reporte/informe`, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new ApiError(mensajeDeDocumento(data, 'No se pudo generar el informe.'), res.status)
+  }
+  return res.blob()
+}
