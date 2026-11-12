@@ -1,6 +1,7 @@
 detener-entorno.bat
 iniciar-entorno.bat
 ideas accesibilidad o innovación.txt
+.DS_Store
 
 # Herramientas de Claude Code (skills) — solo locales, no se suben al repo
 .claude/
