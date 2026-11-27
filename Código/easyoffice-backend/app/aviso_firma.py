@@ -32,6 +32,9 @@ IGNORADO = "ignorado"
 
 # Con la copia firmada ya guardada, o con el tramite cerrado, un aviso nuevo no cambia nada.
 ESTADOS_CON_COPIA_FIRMADA = ("firmado", "entregado")
+# Un tramite anulado por el agente no revive como firmado si el cliente igual firma despues
+# (el CRM no le avisa a la API de firma al cancelar).
+ESTADOS_QUE_NO_SE_FIRMAN = (*ESTADOS_CON_COPIA_FIRMADA, "cancelado")
 ESTADOS_QUE_NO_SE_RECHAZAN = ("firmado", "entregado", "rechazado", "cancelado")
 
 MAX_MOTIVO = 500
@@ -74,7 +77,7 @@ def _guardar_copia_firmada(tramite: models.Tramite, pdf: bytes) -> None:
 
 
 def _completado(db: Session, tramite: models.Tramite, evento: dict) -> str:
-    if tramite.estado_actual in ESTADOS_CON_COPIA_FIRMADA:
+    if tramite.estado_actual in ESTADOS_QUE_NO_SE_FIRMAN:
         return SIN_CAMBIOS
 
     # Si la API no entrega el PDF, ErrorFirma sube hasta quien llama y la API reintenta el aviso.

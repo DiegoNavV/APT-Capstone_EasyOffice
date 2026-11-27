@@ -314,6 +314,42 @@ class TramitesPaginaOut(BaseModel):
     total: int  # total que cumple los filtros (sin paginar)
 
 
+# ---------- Detalle de un trámite: firma + seguimiento (requiere login) ----------
+# Mockup Figma, pantalla "4 · Detalle de trámite (firma + seguimiento)".
+
+class HistorialItemOut(BaseModel):
+    estado: str
+    origen: str  # agente | cliente | sistema
+    comentario: Optional[str] = None
+    nombre_usuario: Optional[str] = None
+    fecha: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TramiteDetalleOut(BaseModel):
+    id_tramite: int
+    codigo_seguimiento: str
+    cliente: ClienteListadoOut
+    nombre_servicio: str
+    estado_actual: str
+    id_usuario_responsable: Optional[int] = None
+    nombre_agente: Optional[str] = None
+    fecha_creacion: datetime
+    fecha_actualizacion: datetime
+    tiene_documento: bool
+    folio: Optional[str] = None
+    aviso_firma: Optional[str] = None
+    historial: list[HistorialItemOut]
+
+
+class CancelarTramiteIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    comentario: Optional[str] = Field(default=None, max_length=500)
+
+
 # ---------- Listado de clientes del panel (requiere login) ----------
 
 class ClienteResumenOut(BaseModel):

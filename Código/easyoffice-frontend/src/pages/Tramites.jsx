@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext.jsx'
 import { ApiError } from '../lib/api.js'
 import { descargarDocumento, generarDocumento, listarTramites, obtenerResumenTramites } from '../lib/tramitesApi.js'
@@ -6,9 +7,10 @@ import PaginaPanel from '../components/PaginaPanel.jsx'
 import StatusChip from '../components/StatusChip.jsx'
 import { SkeletonFilas, SkeletonTarjetas } from '../components/Skeleton.jsx'
 
-// Vista "panel principal" (mockup Figma, pantalla "2 · Listado de trámites"), conectada al backend: GET /api/tramites 
-// (lista, filtros, búsqueda y paginación en el servidor) y GET /api/tramites/resumen (KPIs y opciones de los filtros). 
-// "+ Nuevo trámite" y el clic en una fila todavía no hacen nada porque esas funcionalidades no están construidas.
+// Vista "panel principal" (mockup Figma, pantalla "2 · Listado de trámites"), conectada al backend: GET /api/tramites
+// (lista, filtros, búsqueda y paginación en el servidor) y GET /api/tramites/resumen (KPIs y opciones de los filtros).
+// "+ Nuevo trámite" todavía no hace nada porque esa funcionalidad no está construida. El clic en una fila lleva al
+// detalle (pantalla "4 · Detalle de trámite", firma + seguimiento).
 // La columna PDF genera y descarga el documento del trámite (POST/GET /api/tramites/{id}/documento).
 
 const POR_PAGINA = 10
@@ -25,7 +27,7 @@ const ESTADOS = [
 ]
 
 // Con el documento ya firmado o entregado no se vuelve a generar (el servidor también lo impide).
-const ESTADOS_SIN_REGENERAR = ['firmado', 'entregado']
+const ESTADOS_SIN_REGENERAR = ['firmado', 'entregado', 'cancelado']
 
 const KPIS = [
   { clave: 'pendientes_datos', etiqueta: 'Pendientes de datos', nota: 'El cliente aún no completa sus datos' },
@@ -64,6 +66,7 @@ function formatearActualizado(iso, ahora = new Date()) {
 }
 
 export default function Tramites() {
+  const navigate = useNavigate()
   const { accessToken, cerrarSesion } = useAuth()
   const haySesion = Boolean(accessToken)
 
@@ -375,8 +378,11 @@ export default function Tramites() {
         ) : (
           <div className={cargando ? 'opacity-60' : ''}>
             {items.map((t) => (
-              // No hay vista de detalle construida todavía: la fila no navega a ningún lado.
-              <div key={t.id_tramite} className="border-b border-line last:border-b-0 flex items-center px-4 py-[13px] hover:bg-canvas transition-colors">
+              <div
+                key={t.id_tramite}
+                onClick={() => navigate(`/panel/tramites/${t.id_tramite}`)}
+                className="border-b border-line last:border-b-0 flex items-center px-4 py-[13px] hover:bg-canvas transition-colors cursor-pointer"
+              >
                 <div className="flex-1 min-w-0">
                   <p
                     className="text-sm font-medium text-ink-primary"
@@ -401,7 +407,7 @@ export default function Tramites() {
                 <span className="w-[150px]">
                   <StatusChip variant={t.estado_actual} />
                 </span>
-                <span className="w-[170px]">{accionesPdf(t)}</span>
+                <span className="w-[170px]" onClick={(e) => e.stopPropagation()}>{accionesPdf(t)}</span>
               </div>
             ))}
           </div>
