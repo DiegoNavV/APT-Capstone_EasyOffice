@@ -5,6 +5,7 @@ import LogIn from './pages/LogIn.jsx'
 import Panel from './pages/Panel.jsx'
 import Solicitudes from './pages/Solicitudes.jsx'
 import Tramites from './pages/Tramites.jsx'
+import TramiteDetalle from './pages/TramiteDetalle.jsx'
 import Clientes from './pages/Clientes.jsx'
 import ClienteDetalle from './pages/ClienteDetalle.jsx'
 import Plantillas from './pages/Plantillas.jsx'
@@ -23,6 +24,7 @@ function FueraDelPanel() {
 // Mientras no exista un home del panel, /panel lleva a Solicitudes, que es el módulo ya construido. Una ruta desconocida muestra la 404.
 // Reportes ya está conectado a GET /api/tramites/reporte; el backend decide con `puede_ver` quién la ve (hoy solo administradores).
 // Clientes ya está conectado a GET /api/clientes, y cada fila lleva a la ficha 360° (GET /api/clientes/:id, pantalla 6 del mockup).
+// Trámites: cada fila lleva al detalle (GET /api/tramites/:id, pantalla 4 del mockup: firma + seguimiento).
 export default function App() {
   return (
     <AuthProvider>
@@ -32,6 +34,7 @@ export default function App() {
           <Route index element={<Navigate to="/panel/solicitudes" replace />} />
           <Route path="solicitudes" element={<Solicitudes />} />
           <Route path="tramites" element={<Tramites />} />
+          <Route path="tramites/:idTramite" element={<TramiteDetalle />} />
           <Route path="clientes" element={<Clientes />} />
           <Route path="clientes/:idCliente" element={<ClienteDetalle />} />
           <Route path="plantillas" element={<Plantillas />} />

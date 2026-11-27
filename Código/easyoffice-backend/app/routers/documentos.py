@@ -24,7 +24,7 @@ def generar_documento(
 ):
     """
     Panel (requiere login): genera el PDF del trámite con la plantilla activa de su servicio. Si ya existía uno, lo reemplaza. 
-    Responde 409 si no hay plantilla o el trámite ya está firmado, 422 si faltan datos (con la lista) y 502 si falla la conversión a PDF.
+    Responde 409 si no hay plantilla o el trámite ya está firmado o cancelado, 422 si faltan datos (con la lista) y 502 si falla la conversión a PDF.
     """
     tramite = _tramite_o_404(db, id_tramite)
     try:

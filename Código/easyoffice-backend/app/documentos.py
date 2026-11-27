@@ -3,7 +3,7 @@ Generación del documento de un trámite: toma la plantilla activa del servicio,
 
 El PDF se guarda en DOCUMENTOS_DIR (volumen de Docker, fuera de Git) con un nombre que fijamos nosotros (tramite_<id>.pdf); en 
 la base solo queda la ruta relativa, en `tramite.ruta_documento_generado`. Generar de nuevo reemplaza el PDF anterior, salvo que el 
-trámite ya esté firmado o entregado.
+trámite ya esté firmado, entregado o cancelado.
 
 Todavía NO cambia el estado del trámite ni envía nada a la firma: eso es el paso siguiente del plan (API de firma).
 """
@@ -25,8 +25,9 @@ from app.valores_documento import valores_para_documento
 
 log = logging.getLogger("easyoffice.documentos")
 
-# Con el documento ya firmado o entregado no se puede volver a generar.
-ESTADOS_BLOQUEADOS = {"firmado", "entregado"}
+# Con el documento ya firmado o entregado no se puede volver a generar; un trámite cancelado tampoco
+# (está anulado, no tiene sentido producirle un documento).
+ESTADOS_BLOQUEADOS = {"firmado", "entregado", "cancelado"}
 
 
 class DocumentoNoGenerable(Exception):
@@ -125,6 +126,8 @@ def armar_docx(db: Session, tramite: models.Tramite, valores: dict | None = None
 def generar(db: Session, tramite: models.Tramite) -> dict:
     """Genera (o regenera) el PDF del trámite. Devuelve sus datos; lanza
     DocumentoNoGenerable si algo impide hacerlo."""
+    if tramite.estado_actual == "cancelado":
+        raise DocumentoNoGenerable("El trámite está cancelado; no se puede generar su documento.")
     if tramite.estado_actual in ESTADOS_BLOQUEADOS:
         raise DocumentoNoGenerable("El trámite ya está firmado; su documento no se puede volver a generar.")
 

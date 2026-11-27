@@ -86,6 +86,65 @@ def informe_tramites_pdf(
     )
 
 
+# ---------- Detalle de un trámite: firma + seguimiento (requiere login) ----------
+
+def _tramite_o_404(db: Session, id_tramite: int) -> models.Tramite:
+    tramite = db.get(models.Tramite, id_tramite)
+    if tramite is None:
+        raise HTTPException(status_code=404, detail="Trámite no encontrado.")
+    return tramite
+
+
+@router.get("/{id_tramite:int}", response_model=schemas.TramiteDetalleOut)
+def obtener_tramite(
+    id_tramite: int,
+    db: Session = Depends(get_db),
+    _usuario: models.Usuario = Depends(get_usuario_actual),
+):
+    """Uso del panel (requiere login): detalle de un trámite con su historial completo de estados
+    (mockup Figma, pantalla "4 · Detalle de trámite (firma + seguimiento)")."""
+    tramite = _tramite_o_404(db, id_tramite)
+    return crud.construir_detalle(db, tramite)
+
+
+@router.post("/{id_tramite:int}/cancelar", response_model=schemas.TramiteDetalleOut)
+def cancelar_tramite(
+    id_tramite: int,
+    entrada: schemas.CancelarTramiteIn,
+    db: Session = Depends(get_db),
+    usuario: models.Usuario = Depends(get_usuario_actual),
+):
+    """Panel (requiere login): anula el trámite. No se puede deshacer ni aplicar una vez firmado o entregado
+    (409 en ese caso)."""
+    tramite = _tramite_o_404(db, id_tramite)
+    try:
+        tramite = crud.cancelar_tramite(db, tramite, usuario.id_usuario, entrada.comentario)
+    except crud.TramiteNoCancelable as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+    return crud.construir_detalle(db, tramite)
+
+
+@router.post("/{id_tramite:int}/reenviar-firma", response_model=schemas.TramiteDetalleOut)
+def reenviar_a_firma(
+    id_tramite: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    _usuario: models.Usuario = Depends(get_usuario_actual),
+):
+    """Panel (requiere login): reintenta a mano el envío a la API de firma cuando quedó atascado (ver
+    `aviso_firma` en el listado/detalle). Reutiliza la misma función que el envío automático
+    (app/envio_firma.py): es segura de repetir, no duplica el documento en la API de firma si ya se había
+    creado. 409 si el trámite no está en proceso de firma."""
+    tramite = _tramite_o_404(db, id_tramite)
+    if tramite.estado_actual != envio_firma.ESTADO_PROCESANDO_FIRMA:
+        raise HTTPException(status_code=409, detail="Este trámite no está en proceso de firma.")
+    envio_firma.enviar_a_firma(
+        db, tramite, get_remote_address(request), request.headers.get("user-agent", "")[:500]
+    )
+    db.refresh(tramite)
+    return crud.construir_detalle(db, tramite)
+
+
 @router.get("/codigo/{codigo}", response_model=schemas.SeguimientoOut)
 @limiter.limit("30/minute")
 def consultar_tramite_por_codigo(request: Request, codigo: str, db: Session = Depends(get_db)):

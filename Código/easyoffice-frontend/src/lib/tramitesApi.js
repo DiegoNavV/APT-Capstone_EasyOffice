@@ -54,6 +54,26 @@ export async function descargarDocumento({ accessToken, idTramite }) {
   return res.blob()
 }
 
+// Detalle de un trámite con su historial de estados (pantalla "4 · Detalle de trámite", firma + seguimiento).
+export function obtenerTramite({ accessToken, idTramite }) {
+  return pedir(`/api/tramites/${idTramite}`, { accessToken })
+}
+
+// Anula el trámite (no se puede deshacer). `comentario` es opcional.
+export function cancelarTramite({ accessToken, idTramite, comentario }) {
+  return pedir(`/api/tramites/${idTramite}/cancelar`, {
+    accessToken,
+    method: 'POST',
+    body: { comentario: comentario || null },
+  })
+}
+
+// Reintenta a mano el envío a firma cuando quedó atascado (ver `aviso_firma`). Solo tiene efecto
+// si el trámite sigue en procesando_firma.
+export function reenviarAFirma({ accessToken, idTramite }) {
+  return pedir(`/api/tramites/${idTramite}/reenviar-firma`, { accessToken, method: 'POST' })
+}
+
 // Conteos agregados para la vista de Reportes: { puede_ver, total, por_estado, por_servicio, por_agente }.
 // `puede_ver` es false para quienes no son administrador (el panel muestra solo un aviso).
 export function obtenerReporteTramites({ accessToken }) {
