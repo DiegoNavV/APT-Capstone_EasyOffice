@@ -559,6 +559,36 @@ def documento_disponible(tramite: models.Tramite) -> bool:
     return tramite.estado_actual in ESTADOS_DOCUMENTO_DISPONIBLE
 
 
+# Con el documento ya firmado o entregado no tiene sentido anular (el documento ya tiene validez,
+# o el cliente ya lo recibió); "cancelado" tampoco se puede cancelar de nuevo.
+ESTADOS_NO_CANCELABLES = ("firmado", "entregado", "cancelado")
+
+
+class TramiteNoCancelable(Exception):
+    """El trámite ya está en un estado que no admite cancelación."""
+
+
+def cancelar_tramite(
+    db: Session, tramite: models.Tramite, id_usuario: int, comentario: str | None
+) -> models.Tramite:
+    """Anula un trámite a pedido de un agente. No se puede deshacer ni aplicar una vez firmado o entregado.
+    No avisa a la API de firma -- si el documento ya se había enviado, igual se cancela solo del lado del CRM
+    (mismo criterio que app/aviso_firma.py: "el CRM mismo cancela, no necesita que le avisen")."""
+    if tramite.estado_actual in ESTADOS_NO_CANCELABLES:
+        raise TramiteNoCancelable(f"Un trámite {tramite.estado_actual} no se puede cancelar.")
+    tramite.estado_actual = "cancelado"
+    db.add(models.HistorialEstado(
+        id_tramite=tramite.id_tramite,
+        estado="cancelado",
+        origen="agente",
+        comentario=(comentario or "Trámite anulado por el agente.").strip()[:500],
+        id_usuario=id_usuario,
+    ))
+    db.commit()
+    db.refresh(tramite)
+    return tramite
+
+
 def registrar_entrega(db: Session, tramite: models.Tramite) -> models.Tramite:
     """El cliente descargó su documento firmado: el trámite pasa de `firmado` a `entregado` y queda constancia
     en el historial. Si ya estaba `entregado` (descarga repetida) o en otro estado, no cambia nada.
@@ -733,6 +763,42 @@ def listar_tramites(
                 aviso_firma=envio_firma.motivo_envio_pendiente(t),
             )
             for t in tramites
+        ],
+    )
+
+
+def construir_detalle(db: Session, tramite: models.Tramite) -> schemas.TramiteDetalleOut:
+    """Detalle de un trámite para el panel, con su historial completo de estados
+    (mockup Figma, pantalla "4 · Detalle de trámite (firma + seguimiento)")."""
+    historial = (
+        db.query(models.HistorialEstado)
+        .options(joinedload(models.HistorialEstado.usuario))
+        .filter(models.HistorialEstado.id_tramite == tramite.id_tramite)
+        .order_by(models.HistorialEstado.fecha, models.HistorialEstado.id_historial)
+        .all()
+    )
+    return schemas.TramiteDetalleOut(
+        id_tramite=tramite.id_tramite,
+        codigo_seguimiento=tramite.codigo_seguimiento,
+        cliente=_datos_cliente_listado(tramite),
+        nombre_servicio=tramite.servicio.nombre,
+        estado_actual=tramite.estado_actual,
+        id_usuario_responsable=tramite.id_usuario_responsable,
+        nombre_agente=tramite.usuario_responsable.nombre if tramite.usuario_responsable else None,
+        fecha_creacion=tramite.fecha_creacion,
+        fecha_actualizacion=tramite.fecha_actualizacion,
+        tiene_documento=bool(tramite.ruta_documento_generado),
+        folio=tramite.folio,
+        aviso_firma=envio_firma.motivo_envio_pendiente(tramite),
+        historial=[
+            schemas.HistorialItemOut(
+                estado=h.estado,
+                origen=h.origen,
+                comentario=h.comentario,
+                nombre_usuario=h.usuario.nombre if h.usuario else None,
+                fecha=h.fecha,
+            )
+            for h in historial
         ],
     )
 

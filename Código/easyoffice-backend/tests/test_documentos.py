@@ -105,6 +105,13 @@ def test_tramite_firmado_no_se_regenera(client, headers_agente, tramite, con_pla
     assert r.status_code == 409 and "ya está firmado" in r.json()["detail"]
 
 
+def test_tramite_cancelado_no_genera_documento(client, headers_agente, tramite, con_plantilla, con_banco, db_session):
+    tramite.estado_actual = "cancelado"
+    db_session.commit()
+    r = generar(client, headers_agente, tramite.id_tramite)
+    assert r.status_code == 409 and "cancelado" in r.json()["detail"]
+
+
 def test_descargar_sin_documento_generado(client, headers_agente, tramite):
     r = client.get(f"/api/tramites/{tramite.id_tramite}/documento", headers=headers_agente)
     assert r.status_code == 404

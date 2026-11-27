@@ -350,6 +350,8 @@ class HistorialEstado(Base):
     id_usuario = Column("usuario_id", Integer, ForeignKey("usuario.id"))
     fecha = Column(TIMESTAMP, nullable=False, server_default=func.now())
 
+    usuario = relationship("Usuario")
+
     __table_args__ = (Index("idx_historial_tramite_fecha", "tramite_id", "fecha"),)
 
 

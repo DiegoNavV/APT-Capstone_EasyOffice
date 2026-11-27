@@ -12,7 +12,7 @@ import { SkeletonFilas, SkeletonTarjeta } from '../components/Skeleton.jsx'
 // y el historial completo de trámites, con los mismos botones Generar/Descargar que la vista de Trámites.
 // GET /api/clientes/{id}.
 
-const ESTADOS_SIN_REGENERAR = ['firmado', 'entregado']
+const ESTADOS_SIN_REGENERAR = ['firmado', 'entregado', 'cancelado']
 
 const claseBoton =
   'text-[13px] font-medium px-3 py-1.5 rounded-md border border-line-strong bg-surface text-ink-primary hover:border-ink-muted transition-colors disabled:opacity-50'

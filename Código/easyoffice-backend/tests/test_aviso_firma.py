@@ -6,7 +6,7 @@ import hashlib
 
 import pytest
 
-from app import aviso_firma, firma_client, models
+from app import aviso_firma, crud, firma_client, models
 from app.firma_client import ErrorFirma
 from tests.test_valores_documento import tramite  # noqa: F401  (fixture)
 
@@ -141,6 +141,15 @@ class TestCompletado:
         assert aviso_firma.procesar_aviso(db_session, evento()) == aviso_firma.SIN_CAMBIOS
         assert descarga == []
         assert estado(db_session, en_firma) == "entregado"
+
+    def test_tramite_cancelado_no_revive_como_firmado(self, db_session, seed, en_firma, descarga, carpeta_documentos):
+        # El agente anula mientras está en firma; el cliente firma igual y llega el aviso.
+        crud.cancelar_tramite(db_session, en_firma, seed["usuario"].id_usuario, "Cliente desistió.")
+
+        assert aviso_firma.procesar_aviso(db_session, evento()) == aviso_firma.SIN_CAMBIOS
+        assert descarga == []
+        assert estado(db_session, en_firma) == "cancelado"
+        assert pdf_guardado(carpeta_documentos, en_firma) == PDF_SIN_FIRMAR
 
 
 class TestRechazado:
